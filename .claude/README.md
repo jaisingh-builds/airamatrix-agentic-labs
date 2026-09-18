@@ -8,7 +8,7 @@ with anyone who ever clones this repo.
 
 | File | What |
 |---|---|
-| `settings.json` | Gateway URL, pinned models, permission rules, hook wiring |
+| `settings.json` | Permission rules and hook wiring. **No gateway URL, no models, no key** - those live in your own `~/.claude/settings.json`, from your access card. |
 | `commands/` | Slash commands for tasks this repo does repeatedly |
 | `agents/` | Subagent definitions — narrow jobs, focused context |
 | `hooks/` | Deterministic gates. Formatting and secrets are enforced, not requested. |

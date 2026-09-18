@@ -65,6 +65,11 @@ This is why your key and model pins go in `~/.claude/settings.json` above, not
 only in the repo file. The repo file is a convenience once trusted; the user file
 is what actually makes things work.
 
+> **It has to be your own `~/.claude/settings.json`.** Putting these values in
+> the repository's `.claude/settings.json` does not work — Claude Code ignores
+> credentials supplied by a project, so a repo you cloned cannot hijack your
+> session. If you see *"OAuth session expired"*, this is why.
+
 ## Choosing a model
 
 Three models are available to you, all from Day 1:
