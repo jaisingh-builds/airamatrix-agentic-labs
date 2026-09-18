@@ -54,7 +54,8 @@ These are the interesting part. Be precise with the agent about them.
 ### Status transitions
 
 `queued -> running -> completed`, and `queued -> cancelled`.
-Any other transition is a `409`.
+Any other transition is a `409`, as is any transition on a job id that does not
+exist.
 
 Nothing external drives `running` and `completed` in this lab — there is no
 worker. Expose them as an internal method (or a test-only endpoint) that your
@@ -67,6 +68,12 @@ is testable. Decide and state what cancelling a `running`, `completed` or
 - Tests for every validation rule and every rejected transition.
 - No database. In-memory is fine.
 - Java/Spring Boot or TypeScript/Node — your team's stack.
+- **Front-end teams:** build the client against this API rather than a second
+  back end. If you have your own Angular scaffold checked out, use it; otherwise
+  a single dependency-free HTML page with `fetch` is enough, and it keeps the
+  repo's no-install rule intact. Minimum outcome either way: submit a job,
+  display **field-level** errors for a rejection that fails three rules at once,
+  and poll the job's status.
 
 ---
 

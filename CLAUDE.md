@@ -19,9 +19,11 @@ reference solutions live on the `solutions` branch only.
 
 ## Conventions
 
-- **Python and Node labs use the standard library only.** No `pip install`, no
-  `npm install`. Twenty-two laptops behind a corporate proxy is not the place to
-  discover a dependency problem.
+- **Python and Node lab exercises use the standard library only.** No
+  `pip install`, no `npm install`. Twenty-two laptops behind a corporate proxy is
+  not the place to discover a dependency problem. This is about the exercises in
+  this repository; it is not a rule about the participant's own projects, and a
+  team working in their own checked-out scaffold is outside it.
 - **Java builds through the root POM.** Always `-am`, or the `labkit` dependency
   will not resolve:
   `mvn -q test -pl day1-foundations/lab1-bare-metal-loop/java -am`

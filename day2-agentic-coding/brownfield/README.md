@@ -1,7 +1,8 @@
 # Lab 3 — Brownfield: comprehension, characterisation, then change
 
-**Time:** 75 minutes (extended — the highest-value session for a team maintaining
-an existing product)
+**Time:** 75 minutes, budgeted 10 + 25 + 10 + 15 + 10 + 5. Extended on purpose —
+the highest-value session for a team maintaining an existing product.
+The upgrade workflow in step 5 is taught, not timed.
 
 > If a sanitised copy of your own repository is available, use that instead.
 > `legacy-svc` exists so the lab runs regardless.
@@ -17,7 +18,7 @@ crashing.
 
 You have: the code, a stack trace, and a defect report with three complaints in it.
 
-## Step 1 — Comprehension (15 min)
+## Step 1 — Comprehension (10 min)
 
 Before changing anything, get a trustworthy explanation. In Claude Code:
 
@@ -60,7 +61,7 @@ before you fix anything:
 Your characterisation tests are how you check. One of the three does not
 reproduce at all. Finding that out is worth more than fixing it would have been.
 
-## Step 4 — Fix (20 min)
+## Step 4 — Fix (15 min)
 
 Fix what is real. For each change:
 
@@ -70,17 +71,18 @@ Fix what is real. For each change:
 - `calc(...)` is used by an old batch job and INT-4471 says do not delete it.
   Does your fix change what that caller sees?
 
-## Step 5 — Refactor, now that you can prove it (10 min)
+## Step 5 — Refactor, now that you have evidence (10 min)
 
 Only now. With the characterisation tests green, the tidier rewrite the agent
-offered in step 1 becomes a reasonable thing to consider — because you can show
-it changed nothing.
+offered in step 1 becomes a reasonable thing to consider — because you can now
+show what it did and did not move, for the cases you covered.
 
 Pick **one** thing: extract the discount ladder, or name the magic numbers. Not
 both, and not the whole method. Ask for a refactor with no behaviour change, and
 say the characterisation tests are the contract.
 
-Then run them. Green means the refactor was honest. One red test means it is a
+Then run them. Green is evidence for the cases you covered, not proof for all of
+them, so read the diff and the callers as well. One red test means it is a
 behaviour change wearing a refactor's name — read it, and do not re-baseline the
 test to make it pass.
 
@@ -118,7 +120,8 @@ That note is your Day 2 checkpoint artefact.
 - [ ] You can say which of the three reported symptoms was not real
 - [ ] The crash is fixed and the batch-job caller still behaves
 - [ ] You decided the rounding question deliberately, and wrote down why
-- [ ] One behaviour-preserving refactor, proven by the same tests
+- [ ] One behaviour-preserving refactor, evidenced by the same tests and a read
+      of the diff
 - [ ] `review-note.md` exists
 
 ## The trap
