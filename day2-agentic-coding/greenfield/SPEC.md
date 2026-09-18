@@ -68,10 +68,12 @@ is testable. Decide and state what cancelling a `running`, `completed` or
 - Tests for every validation rule and every rejected transition.
 - No database. In-memory is fine.
 - Java/Spring Boot or TypeScript/Node — your team's stack.
-- **Front-end teams:** build the client against this API rather than a second
-  back end. If you have your own Angular scaffold checked out, use it; otherwise
-  a single dependency-free HTML page with `fetch` is enough, and it keeps the
-  repo's no-install rule intact. Minimum outcome either way: submit a job,
+- **Front-end teams:** build the client, not a second back end. The trainer runs
+  a reference API on the room network — ask for the host and port — so you are
+  not blocked waiting for a team-mate's service; switch to your own team's API
+  once it runs. Use your own Angular scaffold if you have one checked out;
+  otherwise a single dependency-free HTML page with `fetch` is enough, and it
+  keeps the no-install rule intact. Minimum outcome either way: submit a job,
   display **field-level** errors for a rejection that fails three rules at once,
   and poll the job's status.
 
