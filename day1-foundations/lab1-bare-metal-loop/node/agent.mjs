@@ -21,6 +21,12 @@ const SYSTEM =
   "and never invent file contents. When you have the answer, state it plainly.";
 
 export class StepLimitExceeded extends Error {}
+/** stop_reason === "max_tokens": the reply was cut off, so it is not an answer. */
+export class Truncated extends Error {}
+/** stop_reason === "refusal": the model declined to continue. */
+export class Refused extends Error {}
+/** A stop_reason this code has never seen. Fail safely and keep the trace. */
+export class UnhandledStop extends Error {}
 
 export async function runAgent(goal, { maxSteps, verbose = true } = {}) {
   const cfg = new Config();
@@ -50,8 +56,18 @@ export async function runAgent(goal, { maxSteps, verbose = true } = {}) {
     // Record the cost: budget.record(response.usage || {})
 
     // -------------------------------------------------------------- TODO 3
-    // If stop !== "tool_use" the agent is done. Join the text of every block
-    // where type === "text" and return it. Trace it first with tracer.emit.
+    // Branch on stop. There is NO single "not tool_use means done" branch -
+    // that is how an agent reports a truncated or refused reply as an answer:
+    //
+    //   "tool_use"                  -> fall through to TODO 4
+    //   "end_turn" | "stop_sequence"-> join the text blocks, check it is not
+    //                                  empty, trace it and return it
+    //   "max_tokens"                -> throw new Truncated(...) - the reply was
+    //                                  cut off, so it is not the answer
+    //   "refusal"                   -> throw new Refused(...)
+    //   "pause_turn"                -> send the conversation back unchanged to
+    //                                  continue; not finished
+    //   anything else               -> throw new UnhandledStop(stop)
 
     // -------------------------------------------------------------- TODO 4
     // Otherwise the model wants tools. Two rules that are easy to get wrong:
@@ -85,7 +101,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   try {
     console.log("\nANSWER:\n" + await runAgent(goal));
   } catch (err) {
-    if (err instanceof StepLimitExceeded || err instanceof BudgetExceeded) {
+    if (err instanceof StepLimitExceeded || err instanceof BudgetExceeded
+        || err instanceof Truncated || err instanceof Refused || err instanceof UnhandledStop) {
       console.log(`\nHALTED: ${err.message}`); process.exit(1);
     }
     throw err;

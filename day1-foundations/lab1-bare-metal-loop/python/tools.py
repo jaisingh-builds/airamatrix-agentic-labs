@@ -4,12 +4,14 @@ The schema IS the prompt. The model never sees your implementation — only the
 name, the description and the JSON Schema. Lab 1.2 makes that point by breaking
 these deliberately.
 """
-import json
+import ast
 import pathlib
+import urllib.error
 import urllib.request
 
 WORKSPACE = pathlib.Path(__file__).resolve().parent.parent / "workspace"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
+MAX_BYTES = 20_000          # bound at the source, not after the download
 
 
 class ToolError(RuntimeError):
@@ -19,33 +21,65 @@ class ToolError(RuntimeError):
 # --------------------------------------------------------------------- tools
 def read_file(path: str) -> str:
     target = (WORKSPACE / path).resolve()
-    if not str(target).startswith(str(WORKSPACE.resolve())):
+    # is_relative_to, not startswith: "/workspace-evil" starts with "/workspace".
+    if not target.is_relative_to(WORKSPACE.resolve()):
         raise ToolError(f"path escapes the workspace: {path}")
-    if not target.exists():
+    if not target.is_file():
         available = ", ".join(p.name for p in WORKSPACE.iterdir())
         raise ToolError(f"no such file: {path}. Available files: {available}")
-    return target.read_text()
+    return target.read_text(errors="replace")[:MAX_BYTES]
 
 
-def http_get(url: str) -> str:
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """A redirect is a second request to a host you never checked. Re-check it."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_host(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _check_host(url: str) -> None:
     from urllib.parse import urlparse
     host = urlparse(url).hostname or ""
     if host not in ALLOWED_HOSTS:
         raise ToolError(f"host not allowed: {host}. Allowed: {sorted(ALLOWED_HOSTS)}")
-    with urllib.request.urlopen(url, timeout=10) as response:
-        return response.read().decode()
+
+
+def http_get(url: str) -> str:
+    _check_host(url)
+    opener = urllib.request.build_opener(_NoRedirects)
+    with opener.open(url, timeout=10) as response:
+        return response.read(MAX_BYTES).decode()
+
+
+# Arithmetic AST nodes only. Parsing and walking beats a character filter: the
+# filter is a denylist you have to keep right forever, this is an allowlist of
+# operations. Slide 32: an agent's calculator is a classic path to code execution.
+# No ast.Pow: "9**9**9" is a one-line denial of service, and the tool only
+# promises + - * / %. No complex/str constants either - a Constant is not
+# automatically a number.
+_ALLOWED_AST = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant, ast.Add,
+                ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod,
+                ast.USub, ast.UAdd)
 
 
 def calculator(expression: str) -> str:
-    allowed = set("0123456789.+-*/() ")
-    if not set(expression) <= allowed:
-        raise ToolError(
-            f"expression contains unsupported characters: {expression!r}. "
-            "Only numbers and + - * / ( ) are supported."
-        )
     try:
-        return str(eval(expression, {"__builtins__": {}}, {}))   # noqa: S307 - charset-restricted
-    except Exception as exc:
+        tree = ast.parse(expression, mode="eval")
+    except SyntaxError:
+        raise ToolError(f"not a valid arithmetic expression: {expression!r}") from None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and not isinstance(node.value, (int, float)):
+            raise ToolError(f"only numbers are supported, not {type(node.value).__name__}")
+        if not isinstance(node, _ALLOWED_AST):
+            raise ToolError(
+                f"only arithmetic is supported; {type(node).__name__} is not allowed"
+            )
+    try:
+        return str(eval(compile(tree, "<calc>", "eval")))   # noqa: S307 - AST-verified above
+    except ZeroDivisionError:
+        raise ToolError("division by zero") from None
+    except Exception as exc:                                # noqa: BLE001
         raise ToolError(f"could not evaluate {expression!r}: {exc}") from None
 
 

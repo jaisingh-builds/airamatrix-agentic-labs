@@ -118,7 +118,7 @@ def tool_read_file(args: dict) -> str:
     rel = args["path"]
     target = (WORKSPACE / rel).resolve()
     # slide 31: authorise before executing - confine to the workspace
-    if not str(target).startswith(str(WORKSPACE)):
+    if not target.is_relative_to(WORKSPACE):     # not startswith: "/ws-evil" starts with "/ws"
         raise PolicyRefusal(f"path escapes the workspace: {rel}")
     if not target.is_file():
         raise ToolError(
@@ -186,8 +186,11 @@ def tool_http_get(args: dict) -> str:
         raise ToolError(f"request failed: {e}") from e
 
 
+# No ast.Pow: "9**9**9" is a one-line denial of service, and the tool only
+# promises + - * / %. No complex/str constants either - a Constant is not
+# automatically a number.
 _ALLOWED_AST = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant, ast.Add,
-                ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow,
+                ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod,
                 ast.USub, ast.UAdd)
 
 
@@ -199,6 +202,8 @@ def tool_calculator(args: dict) -> str:
     except SyntaxError as e:
         raise ToolError(f"not a valid arithmetic expression: {expr!r}") from e
     for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and not isinstance(node.value, (int, float)):
+            raise ToolError(f"only numbers are supported, not {type(node.value).__name__}")
         if not isinstance(node, _ALLOWED_AST):
             raise ToolError(
                 f"only arithmetic is supported; {type(node).__name__} is not allowed")

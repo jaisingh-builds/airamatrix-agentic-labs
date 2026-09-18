@@ -28,6 +28,21 @@ public final class Agent {
       + "before answering. Never guess a number you could compute with the calculator, "
       + "and never invent file contents. When you have the answer, state it plainly.";
 
+    /** stop_reason "max_tokens": the reply was cut off, so it is not an answer. */
+    public static class Truncated extends RuntimeException {
+        public Truncated(String message) { super(message); }
+    }
+
+    /** stop_reason "refusal": the model declined to continue. */
+    public static class Refused extends RuntimeException {
+        public Refused(String message) { super(message); }
+    }
+
+    /** A stop_reason this code has never seen. Fail safely and keep the trace. */
+    public static class UnhandledStop extends RuntimeException {
+        public UnhandledStop(String stopReason) { super("unhandled stop_reason: " + stopReason); }
+    }
+
     public static class StepLimitExceeded extends RuntimeException {
         public StepLimitExceeded(String message) { super(message); }
     }
@@ -62,8 +77,18 @@ public final class Agent {
             // Record the cost: budget.record(response.get("usage"))
 
             // ---------------------------------------------------------- TODO 3
-            // If stop is not "tool_use" the agent is done. Trace it, then return
-            // the text.
+            // Branch on stop. There is NO single "not tool_use means done"
+            // branch - that is how an agent reports a truncated or refused reply
+            // as a finished answer:
+            //
+            //   "tool_use"                    -> fall through to TODO 4
+            //   "end_turn" / "stop_sequence"  -> trace it and return the text,
+            //                                    after checking it is not blank
+            //   "max_tokens"                  -> throw new Truncated(...)
+            //   "refusal"                     -> throw new Refused(...)
+            //   "pause_turn"                  -> resend the conversation
+            //                                    unchanged to continue
+            //   anything else                 -> throw new UnhandledStop(stop)
 
             // ---------------------------------------------------------- TODO 4
             // Otherwise the model wants tools. Two rules that are easy to get wrong:

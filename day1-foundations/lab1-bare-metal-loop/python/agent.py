@@ -34,6 +34,18 @@ class StepLimitExceeded(RuntimeError):
     """Raised when the agent burns its step budget without finishing."""
 
 
+class Truncated(RuntimeError):
+    """stop_reason == max_tokens: the reply was cut off, so it is not an answer."""
+
+
+class Refused(RuntimeError):
+    """stop_reason == refusal: the model declined to continue."""
+
+
+class UnhandledStop(RuntimeError):
+    """A stop_reason this code has never seen. Fail safely and keep the trace."""
+
+
 def run_agent(goal: str, max_steps: int | None = None, verbose: bool = True) -> str:
     cfg = Config()
     client = GatewayClient(cfg)
@@ -62,9 +74,21 @@ def run_agent(goal: str, max_steps: int | None = None, verbose: bool = True) -> 
         # Then record the cost:  budget.record(response.get("usage", {}))
 
         # ------------------------------------------------------------ TODO 3
-        # If stop != "tool_use" the agent is done. Join the text from every
-        # block whose "type" == "text" and return it.
-        # Trace it first:  tracer.emit("finish", answer=..., spend=...)
+        # Branch on stop. There is NO single "not tool_use means done" branch -
+        # that is how an agent reports a truncated or refused reply as a finished
+        # answer:
+        #
+        #   "tool_use"     -> fall through to TODO 4
+        #   "end_turn" or "stop_sequence"
+        #                  -> join the text blocks, check it is not empty, and
+        #                     return it. Trace: tracer.emit("finish", ...)
+        #   "max_tokens"   -> the reply was cut off. Raise Truncated(...) - do not
+        #                     return a half answer as if it were the answer.
+        #   "refusal"      -> the model declined. Raise Refused(...).
+        #   "pause_turn"   -> a long-running turn: send the conversation back
+        #                     unchanged to continue, do not treat it as finished.
+        #   anything else  -> raise UnhandledStop(stop). A value you have never
+        #                     seen is not success.
 
         # ------------------------------------------------------------ TODO 4
         # Otherwise the model wants tools. Two rules that are easy to get wrong:
@@ -101,6 +125,6 @@ if __name__ == "__main__":
     print("GOAL:", goal, "\n")
     try:
         print("\nANSWER:\n" + run_agent(goal))
-    except (StepLimitExceeded, BudgetExceeded) as exc:
+    except (StepLimitExceeded, BudgetExceeded, Truncated, Refused, UnhandledStop) as exc:
         print(f"\nHALTED: {exc}")
         sys.exit(1)
