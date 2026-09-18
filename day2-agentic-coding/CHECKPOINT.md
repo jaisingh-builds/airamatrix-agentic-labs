@@ -6,12 +6,20 @@
 
 1. A branch with your change, and a diff you can walk someone through.
 2. Tests that cover the behaviour you changed.
-3. `review-note.md` — what you accepted, what you **rejected**, and what remains
-   unverified.
+3. `review-note.md` — what you accepted, changed, **rejected**, and what remains
+   unverified, with the evidence behind each.
 
-The rejected section is the one that matters. A review note with nothing rejected
-usually means the review did not happen. Rubber-stamping an agent's diff is the
-failure mode this day exists to prevent.
+What matters is the evidence, not the verdict count. A note with nothing rejected
+is fine when it shows what you checked; a note with nothing rejected and nothing
+checked is the rubber-stamping this day exists to prevent. An invented objection
+is the same failure pointing the other way.
+
+## What "merged" means here
+
+Branch → tests green → `/review-diff` → `review-note.md` committed alongside the
+change → a second person reads the diff → merge. Keep the branch, the note and
+the run output together: that set is the record, and "an agent wrote it" is not
+one.
 
 ## Also bring
 

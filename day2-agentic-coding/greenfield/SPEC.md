@@ -56,6 +56,12 @@ These are the interesting part. Be precise with the agent about them.
 `queued -> running -> completed`, and `queued -> cancelled`.
 Any other transition is a `409`.
 
+Nothing external drives `running` and `completed` in this lab — there is no
+worker. Expose them as an internal method (or a test-only endpoint) that your
+tests can call, so every transition is reachable and every rejected transition
+is testable. Decide and state what cancelling a `running`, `completed` or
+`cancelled` job does, and what happens for a job id that does not exist.
+
 ### Non-functional
 
 - Tests for every validation rule and every rejected transition.
@@ -78,14 +84,23 @@ This is the **plan → act → diff → review** loop:
 ## Done when
 
 - [ ] The service runs
-- [ ] Every validation rule has a test, including rule 4
+- [ ] Every validation rule has a test, including rule 4 and the three-field
+      aggregation in rule 5
 - [ ] Every rejected transition has a test
 - [ ] You compared against your written estimate
 - [ ] Every diff was reviewed before the next one started
 
 ## What to watch for
 
-- **Rule 4 and rule 5 are where agents cut corners.** Check them specifically.
+- **Rule 4 and rule 5 are where agents cut corners.** Check them specifically,
+  with these cases:
+  - `priority: "rush", slideCount: 1001` must be rejected, and the message must
+    name the rush limit rather than saying "invalid request"
+  - `priority: "rush", slideCount: 1000` must be accepted — the boundary is
+    inclusive on the accepting side
+  - one payload that breaks three rules at once (say `accountId: "ACC-12"`,
+    `slideCount: 0`, `priority: "urgent"`) must return a 400 naming **all
+    three** fields. Count them.
 - **Tests that assert the happy path only.** Ask what happens with `slideCount: 0`,
   `5001`, `-1`, missing, and a string.
 - **Scope creep.** If it starts adding authentication or a database, it has
