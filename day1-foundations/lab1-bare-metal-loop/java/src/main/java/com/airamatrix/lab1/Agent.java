@@ -17,8 +17,8 @@ import java.util.*;
  * Run it:   mvn -q compile exec:java -pl day1-foundations/lab1-bare-metal-loop/java -am
  * Check it: mvn -q test -pl day1-foundations/lab1-bare-metal-loop/java -am
  *
- * Five TODOs. Work top to bottom. The reference solution is on the `solutions`
- * branch - try each TODO before you look.
+ * This is the worked solution (branch `solutions`). The starter, with the five
+ * TODOs, is on `main`. Every stop_reason has its own branch: see runAgent below.
  */
 public final class Agent {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -61,47 +61,76 @@ public final class Agent {
         for (int step = 1; step <= limit; step++) {
             budget.check();
 
-            // ---------------------------------------------------------- TODO 1
-            // Call the model. Pass the conversation so far, Tools.schemas() and
-            // SYSTEM. See GatewayClient.messages(...) for the signature.
-            //
-            //   JsonNode response = client.messages(messages, Tools.schemas(), SYSTEM, 1024);
-            throw new UnsupportedOperationException("TODO 1: call the model");
+            JsonNode response = client.messages(messages, Tools.schemas(), SYSTEM, 1024);
 
-            // ---------------------------------------------------------- TODO 2
-            // Pull out what you need:
-            //   stop   - response.path("stop_reason").asText()
-            //   blocks - response.path("content")
-            //   calls  - blocks whose "type" is "tool_use"
-            //   text   - concatenated "text" of blocks whose "type" is "text"
-            // Record the cost: budget.record(response.get("usage"))
+            String stop = response.path("stop_reason").asText(null);
+            JsonNode blocks = response.path("content");
+            List<JsonNode> calls = new ArrayList<>();
+            StringBuilder textBuilder = new StringBuilder();
+            for (JsonNode block : blocks) {
+                if ("tool_use".equals(block.path("type").asText())) {
+                    calls.add(block);
+                } else if ("text".equals(block.path("type").asText())) {
+                    textBuilder.append(block.path("text").asText());
+                }
+            }
+            String text = textBuilder.toString().strip();
+            List<String> toolNames = calls.stream().map(c -> c.path("name").asText()).toList();
+            double cost = budget.record(response.get("usage"));
+            tracer.step(step, stop == null ? "none" : stop, text, toolNames);
+            if (verbose) {
+                System.out.printf("  step %d: stop=%s tools=%s ($%.4f, %s)%n",
+                    step, stop, toolNames.isEmpty() ? "-" : String.join(",", toolNames),
+                    cost, budget.summary());
+            }
 
-            // ---------------------------------------------------------- TODO 3
-            // Branch on stop. There is NO single "not tool_use means done"
-            // branch - that is how an agent reports a truncated or refused reply
-            // as a finished answer:
-            //
-            //   "tool_use"                    -> fall through to TODO 4
-            //   "end_turn" / "stop_sequence"  -> trace it and return the text,
-            //                                    after checking it is not blank
-            //   "max_tokens"                  -> throw new Truncated(...)
-            //   "refusal"                     -> throw new Refused(...)
-            //   "pause_turn"                  -> resend the conversation
-            //                                    unchanged to continue
-            //   anything else                 -> throw new UnhandledStop(stop)
+            // One branch per stop_reason. "Not tool_use" is not a synonym for
+            // "done": that is how a truncated or refused reply gets reported as
+            // a finished answer.
+            if ("end_turn".equals(stop) || "stop_sequence".equals(stop)) {
+                if (text.isBlank()) {
+                    throw new UnhandledStop("model ended the turn with no text (stop_reason=" + stop + ")");
+                }
+                tracer.emit("finish", Map.of("answer", text.length() > 400 ? text.substring(0, 400) : text,
+                                             "spend", budget.summary()));
+                return text;
+            }
+            if ("max_tokens".equals(stop)) {
+                tracer.emit("stopped", Map.of("reason", "max_tokens", "step", step));
+                throw new Truncated("reply was cut off at the token limit after " + step
+                    + " steps. " + budget.summary());
+            }
+            if ("refusal".equals(stop)) {
+                tracer.emit("stopped", Map.of("reason", "refusal", "step", step));
+                throw new Refused("the model declined to continue. " + budget.summary());
+            }
+            if ("pause_turn".equals(stop)) {
+                messages.add(Map.of("role", "assistant", "content", MAPPER.convertValue(blocks, List.class)));
+                continue;                                   // resume a long-running turn
+            }
+            if (!"tool_use".equals(stop)) {
+                tracer.emit("stopped", Map.of("reason", "unhandled stop_reason=" + stop, "step", step));
+                throw new UnhandledStop(String.valueOf(stop));
+            }
 
-            // ---------------------------------------------------------- TODO 4
-            // Otherwise the model wants tools. Two rules that are easy to get wrong:
-            //   a) add the assistant's blocks to messages BEFORE the results
-            //   b) EVERY tool_use block needs a matching tool_result, and they all
-            //      go back in ONE user message. Splitting them quietly teaches the
-            //      model to stop calling tools in parallel.
-            //
-            //   Object[] outcome = Tools.dispatch(name, args);
-            //   Map.of("type","tool_result","tool_use_id",id,"content",out,"is_error",!ok)
-
-            // ---------------------------------------------------------- TODO 5
-            // Add the results as a single {"role":"user"} message and loop again.
+            // The assistant turn goes in BEFORE the results, and every tool_use
+            // block gets a matching tool_result in ONE user message.
+            messages.add(Map.of("role", "assistant", "content", MAPPER.convertValue(blocks, List.class)));
+            List<Map<String, Object>> results = new ArrayList<>();
+            for (JsonNode call : calls) {
+                String name = call.path("name").asText();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> args = MAPPER.convertValue(call.path("input"), Map.class);
+                Object[] outcome = Tools.dispatch(name, args == null ? Map.of() : args);
+                String out = String.valueOf(outcome[0]);
+                boolean ok = (Boolean) outcome[1];
+                tracer.tool(name, args == null ? Map.of() : args, out, ok);
+                results.add(Map.of("type", "tool_result",
+                                   "tool_use_id", call.path("id").asText(),
+                                   "content", out,
+                                   "is_error", !ok));
+            }
+            messages.add(Map.of("role", "user", "content", results));
         }
 
         // Falling out of the loop means the agent never finished. That is the step
@@ -121,7 +150,8 @@ public final class Agent {
         System.out.println("GOAL: " + goal + "\n");
         try {
             System.out.println("\nANSWER:\n" + runAgent(goal, null, true));
-        } catch (StepLimitExceeded | BudgetGuard.BudgetExceeded e) {
+        } catch (StepLimitExceeded | BudgetGuard.BudgetExceeded
+                 | Truncated | Refused | UnhandledStop e) {
             System.out.println("\nHALTED: " + e.getMessage());
             System.exit(1);
         }

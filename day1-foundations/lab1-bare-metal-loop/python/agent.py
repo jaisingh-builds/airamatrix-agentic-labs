@@ -9,8 +9,8 @@ the programme sits on top of the cycle you are about to implement.
 Run it:   python3 agent.py
 Check it: python3 test_agent.py
 
-Five TODOs. Work top to bottom. The reference solution is on the `solutions`
-branch — try each TODO before you look.
+This is the worked solution (branch `solutions`). The starter, with the five
+TODOs, is on `main`. Every stop_reason has its own branch: see run_agent below.
 """
 import json, pathlib, sys
 
@@ -59,51 +59,55 @@ def run_agent(goal: str, max_steps: int | None = None, verbose: bool = True) -> 
     for step in range(1, limit + 1):
         budget.check()
 
-        # ------------------------------------------------------------ TODO 1
-        # Call the model. Pass the conversation so far, the tool SCHEMAS, and
-        # the SYSTEM prompt.  Look at GatewayClient.messages() for the signature.
-        #
-        #   response = ...
-        raise NotImplementedError("TODO 1: call the model")
+        response = client.messages(messages, tools=lab_tools.SCHEMAS, system=SYSTEM)
 
-        # ------------------------------------------------------------ TODO 2
-        # Pull the three things you need out of the response:
-        #   stop   - response["stop_reason"]
-        #   blocks - response["content"]  (a list of content blocks)
-        #   calls  - only the blocks whose "type" == "tool_use"
-        # Then record the cost:  budget.record(response.get("usage", {}))
+        stop = response.get("stop_reason")
+        blocks = response.get("content", [])
+        calls = [b for b in blocks if b.get("type") == "tool_use"]
+        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+        cost = budget.record(response.get("usage", {}))
+        tracer.step(step, stop or "none", text=text, tools=[c.get("name") for c in calls])
+        if verbose:
+            print(f"  step {step}: stop={stop} tools={[c.get('name') for c in calls] or '-'} "
+                  f"(${cost:.4f}, {budget.summary()})")
 
-        # ------------------------------------------------------------ TODO 3
-        # Branch on stop. There is NO single "not tool_use means done" branch -
-        # that is how an agent reports a truncated or refused reply as a finished
-        # answer:
-        #
-        #   "tool_use"     -> fall through to TODO 4
-        #   "end_turn" or "stop_sequence"
-        #                  -> join the text blocks, check it is not empty, and
-        #                     return it. Trace: tracer.emit("finish", ...)
-        #   "max_tokens"   -> the reply was cut off. Raise Truncated(...) - do not
-        #                     return a half answer as if it were the answer.
-        #   "refusal"      -> the model declined. Raise Refused(...).
-        #   "pause_turn"   -> a long-running turn: send the conversation back
-        #                     unchanged to continue, do not treat it as finished.
-        #   anything else  -> raise UnhandledStop(stop). A value you have never
-        #                     seen is not success.
+        # One branch per stop_reason. "Not tool_use" is not a synonym for "done":
+        # that is how a truncated or refused reply gets reported as an answer.
+        if stop in ("end_turn", "stop_sequence"):
+            if not text:
+                raise UnhandledStop(f"model ended the turn with no text (stop_reason={stop})")
+            tracer.emit("finish", answer=text[:400], spend=budget.summary())
+            return text
 
-        # ------------------------------------------------------------ TODO 4
-        # Otherwise the model wants tools. Two rules that are easy to get wrong:
-        #   a) Append the assistant's blocks to messages BEFORE the results.
-        #   b) EVERY tool_use block needs a matching tool_result, and they all
-        #      go back in ONE user message. Splitting them across messages
-        #      quietly teaches the model to stop calling tools in parallel.
-        #
-        # For each call:  out, ok = lab_tools.dispatch(call["name"], call["input"])
-        # Build:  {"type": "tool_result", "tool_use_id": call["id"],
-        #          "content": out, "is_error": not ok}
+        if stop == "max_tokens":
+            tracer.emit("stopped", reason="max_tokens", step=step)
+            raise Truncated(
+                f"reply was cut off at the token limit after {step} steps; "
+                f"raise max_tokens or ask for a shorter answer. {budget.summary()}")
 
-        # ------------------------------------------------------------ TODO 5
-        # Append the results as a single {"role": "user", ...} message and let
-        # the loop go round again.
+        if stop == "refusal":
+            tracer.emit("stopped", reason="refusal", step=step)
+            raise Refused(f"the model declined to continue. {budget.summary()}")
+
+        if stop == "pause_turn":
+            # A long-running turn. Send the conversation back unchanged to resume.
+            messages.append({"role": "assistant", "content": blocks})
+            continue
+
+        if stop != "tool_use":
+            tracer.emit("stopped", reason=f"unhandled stop_reason={stop}", step=step)
+            raise UnhandledStop(str(stop))
+
+        # The assistant turn goes in BEFORE the results, and every tool_use block
+        # gets a matching tool_result in ONE user message.
+        messages.append({"role": "assistant", "content": blocks})
+        results = []
+        for call in calls:
+            out, ok = lab_tools.dispatch(call["name"], call.get("input", {}))
+            tracer.tool(call["name"], call.get("input", {}), out, ok)
+            results.append({"type": "tool_result", "tool_use_id": call["id"],
+                            "content": out, "is_error": not ok})
+        messages.append({"role": "user", "content": results})
 
     # Falling out of the loop means the agent never finished. That is the step
     # limit doing its job — an agent without one is a production incident.

@@ -8,8 +8,8 @@
 // Run it:   node agent.mjs
 // Check it: node --test
 //
-// Five TODOs. Work top to bottom. The reference solution is on the `solutions`
-// branch - try each TODO before you look.
+// This is the worked solution (branch `solutions`). The starter, with the five
+// TODOs, is on `main`. Every stop_reason has its own branch: see runAgent below.
 import { GatewayClient, Config, Tracer, BudgetGuard, BudgetExceeded }
   from "../../../labkit/node/agentic-core.mjs";
 import * as labTools from "./tools.mjs";
@@ -41,47 +41,53 @@ export async function runAgent(goal, { maxSteps, verbose = true } = {}) {
   for (let step = 1; step <= limit; step++) {
     budget.check();
 
-    // -------------------------------------------------------------- TODO 1
-    // Call the model. Pass the conversation so far, labTools.SCHEMAS and SYSTEM.
-    // See GatewayClient.messages() for the argument shape.
-    //
-    //   const response = await client.messages({ ... });
-    throw new Error("TODO 1: call the model");
+    const response = await client.messages({ messages, tools: labTools.SCHEMAS, system: SYSTEM });
 
-    // -------------------------------------------------------------- TODO 2
-    // Pull out what you need:
-    //   stop   - response.stop_reason
-    //   blocks - response.content            (array of content blocks)
-    //   calls  - blocks where type === "tool_use"
-    // Record the cost: budget.record(response.usage || {})
+    const stop = response.stop_reason;
+    const blocks = response.content || [];
+    const calls = blocks.filter((b) => b.type === "tool_use");
+    const text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    const cost = budget.record(response.usage || {});
+    tracer.step(step, stop || "none", text, calls.map((c) => c.name));
+    if (verbose) {
+      console.log(`  step ${step}: stop=${stop} tools=${calls.map((c) => c.name).join(",") || "-"} ` +
+        `($${cost.toFixed(4)}, ${budget.summary()})`);
+    }
 
-    // -------------------------------------------------------------- TODO 3
-    // Branch on stop. There is NO single "not tool_use means done" branch -
-    // that is how an agent reports a truncated or refused reply as an answer:
-    //
-    //   "tool_use"                  -> fall through to TODO 4
-    //   "end_turn" | "stop_sequence"-> join the text blocks, check it is not
-    //                                  empty, trace it and return it
-    //   "max_tokens"                -> throw new Truncated(...) - the reply was
-    //                                  cut off, so it is not the answer
-    //   "refusal"                   -> throw new Refused(...)
-    //   "pause_turn"                -> send the conversation back unchanged to
-    //                                  continue; not finished
-    //   anything else               -> throw new UnhandledStop(stop)
+    // One branch per stop_reason. "Not tool_use" is not a synonym for "done":
+    // that is how a truncated or refused reply gets reported as an answer.
+    if (stop === "end_turn" || stop === "stop_sequence") {
+      if (!text) throw new UnhandledStop(`model ended the turn with no text (stop_reason=${stop})`);
+      tracer.emit("finish", { answer: text.slice(0, 400), spend: budget.summary() });
+      return text;
+    }
+    if (stop === "max_tokens") {
+      tracer.emit("stopped", { reason: "max_tokens", step });
+      throw new Truncated(`reply was cut off at the token limit after ${step} steps. ${budget.summary()}`);
+    }
+    if (stop === "refusal") {
+      tracer.emit("stopped", { reason: "refusal", step });
+      throw new Refused(`the model declined to continue. ${budget.summary()}`);
+    }
+    if (stop === "pause_turn") {
+      messages.push({ role: "assistant", content: blocks });   // resume a long-running turn
+      continue;
+    }
+    if (stop !== "tool_use") {
+      tracer.emit("stopped", { reason: `unhandled stop_reason=${stop}`, step });
+      throw new UnhandledStop(String(stop));
+    }
 
-    // -------------------------------------------------------------- TODO 4
-    // Otherwise the model wants tools. Two rules that are easy to get wrong:
-    //   a) push the assistant's blocks onto messages BEFORE the results
-    //   b) EVERY tool_use block needs a matching tool_result, and they all go
-    //      back in ONE user message. Splitting them quietly teaches the model
-    //      to stop calling tools in parallel.
-    //
-    //   const [out, ok] = await labTools.dispatch(call.name, call.input);
-    //   { type: "tool_result", tool_use_id: call.id, content: out, is_error: !ok }
-
-    // -------------------------------------------------------------- TODO 5
-    // Push the results as a single { role: "user", content: results } message
-    // and let the loop go round again.
+    // The assistant turn goes in BEFORE the results, and every tool_use block
+    // gets a matching tool_result in ONE user message.
+    messages.push({ role: "assistant", content: blocks });
+    const results = [];
+    for (const call of calls) {
+      const [out, ok] = await labTools.dispatch(call.name, call.input || {});
+      tracer.tool(call.name, call.input || {}, out, ok);
+      results.push({ type: "tool_result", tool_use_id: call.id, content: out, is_error: !ok });
+    }
+    messages.push({ role: "user", content: results });
   }
 
   // Falling out of the loop means the agent never finished. That is the step
