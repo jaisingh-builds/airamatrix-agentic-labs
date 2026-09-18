@@ -99,3 +99,19 @@ parallel. You will not notice until your agent is twice as slow as it should be.
 ## If you finish early
 
 See `EXTENSION.md`.
+
+
+---
+
+## Reference implementation
+
+Once your own loop passes the tests, read [`reference/agent.py`](reference/README.md).
+
+It is the same loop with everything the slides covered: the budget reserved
+before the call, a branch for every stop reason, validate → authorise → execute,
+an enforced output contract, repeat detection and JSONL tracing. Standard library
+only, no dependencies.
+
+Compare three things, not style: where the budget is checked, how many stop
+reasons you handle, and whether a failing tool is distinguishable from a
+succeeding one.

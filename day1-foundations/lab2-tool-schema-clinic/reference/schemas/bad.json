@@ -1,0 +1,32 @@
+[
+  {
+    "impl": "http_get",
+    "name": "get",
+    "description": "Gets data",
+    "input_schema": {
+      "type": "object",
+      "properties": { "q": { "type": "string" } },
+      "required": ["q"]
+    }
+  },
+  {
+    "impl": "read_file",
+    "name": "file",
+    "description": "Reads a file",
+    "input_schema": {
+      "type": "object",
+      "properties": { "name": { "type": "string" } },
+      "required": ["name"]
+    }
+  },
+  {
+    "impl": "calculator",
+    "name": "calc",
+    "description": "Does maths",
+    "input_schema": {
+      "type": "object",
+      "properties": { "input": { "type": "string" } },
+      "required": ["input"]
+    }
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "impl": "http_get",
+    "name": "http_get",
+    "description": "HTTP GET a URL on an allow-listed host (api.github.com, repo.maven.apache.org). Use for public repository and package metadata. Returns the HTTP status and body; a large JSON array is summarised to its item count plus the first five items. Does not follow redirects. Do not use for anything on a host not listed above - it will be refused.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Absolute https URL on an allow-listed host. Example: https://api.github.com/repos/OWNER/REPO"
+        }
+      },
+      "required": ["url"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "impl": "read_file",
+    "name": "read_file",
+    "description": "Read a UTF-8 text file from the workspace and return the first 5 KB. Use for source, build and configuration files such as pom.xml, package.json or README.md. Paths are relative to the workspace root; absolute paths and any path leaving the workspace are refused.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path relative to the workspace root. Example: pom.xml"
+        }
+      },
+      "required": ["path"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "impl": "calculator",
+    "name": "calculator",
+    "description": "Evaluate ONE arithmetic expression and return the numeric result. Supports + - * / // % ** and parentheses only - no variables, functions or comparisons. Use it for percentages and differences once you already have the numbers. Example: to find how far 812 exceeds a limit of 500 as a percentage, pass (812-500)/500*100.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string",
+          "description": "Arithmetic only. Example: (812-500)/500*100"
+        }
+      },
+      "required": ["expression"],
+      "additionalProperties": false
+    }
+  }
+]

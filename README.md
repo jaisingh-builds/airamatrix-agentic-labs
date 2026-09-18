@@ -50,6 +50,10 @@ You will get AWS access on Day 4 for the AgentCore labs.
 | `day2-agentic-coding/` | Claude Code on real code: greenfield, brownfield, grounding. |
 | `bootstrap/` | `doctor` and the gateway conformance test. |
 
+**Reference implementations** are published after each lab, under
+`dayN-*/labN.M-*/reference/`. Read them once your own version works — the point
+of the lab is writing it.
+
 Days 3 and 4 — MCP, agent integration, security, multi-agent, evals, CI/CD,
 AgentCore and the capstone — are added to this repository before those sessions.
 `git pull` on the morning of Day 3.

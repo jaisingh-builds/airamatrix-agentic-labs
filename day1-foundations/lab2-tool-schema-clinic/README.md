@@ -75,3 +75,26 @@ a 4.4 / 1 baseline. Beat it if you can.
 Lab 4.1 is the same exercise against tools that *write* to real systems, where an
 invalid argument is not a retry — it is an incident. The habit you build here is
 the one that matters there.
+
+
+---
+
+## Reference clinic
+
+[`reference/clinic.py`](reference/README.md) runs the same measurement against a
+deliberately broken contract and a good one:
+
+```
+                    bad.json     good.json
+  passed                 3/5           5/5
+  steps (avg)            6.6           2.4
+  invalid args            25             0
+  cost               $0.1284       $0.0515
+```
+
+That is the severe case — a schema that does not expose what the implementation
+needs. The lab you just did is the subtle case: correct names, vague
+descriptions, **passes anyway**, and still costs a third more steps.
+
+Outright failure gets fixed. A contract that works but overcharges you never
+does.
