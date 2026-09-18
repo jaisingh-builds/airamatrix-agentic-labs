@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "anthropic.claude-code",
+    "vscjava.vscode-java-pack",
+    "angular.ng-template",
+    "ms-python.python",
+    "esbenp.prettier-vscode"
+  ]
+}

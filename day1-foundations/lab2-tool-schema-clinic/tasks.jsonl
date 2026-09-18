@@ -1,0 +1,5 @@
+{"id": "t1", "goal": "The login timeout ticket is more urgent than we thought. Raise it to the highest priority level.", "expect": {"ticket": "TKT-1001", "field": "priority", "value": "critical"}}
+{"id": "t2", "goal": "The CSV export bug is being worked on now. Mark it in progress.", "expect": {"ticket": "TKT-1002", "field": "status", "value": "in_progress"}}
+{"id": "t3", "goal": "The ingest queue issue in ap-south-1 is now our top concern. Escalate its priority to the maximum.", "expect": {"ticket": "TKT-1003", "field": "priority", "value": "critical"}}
+{"id": "t4", "goal": "Reopen the ticket about password reset emails not arriving.", "expect": {"ticket": "TKT-1004", "field": "status", "value": "open"}}
+{"id": "t5", "goal": "The reporting team's CSV bug should be low urgency - it already is, but confirm and make sure it is set to the lowest priority.", "expect": {"ticket": "TKT-1002", "field": "priority", "value": "low"}}

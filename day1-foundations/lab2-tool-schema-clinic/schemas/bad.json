@@ -1,0 +1,35 @@
+[
+  {
+    "name": "find_ticket",
+    "description": "searches",
+    "input_schema": {
+      "type": "object",
+      "properties": { "query": { "type": "string" } },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "set_priority",
+    "description": "sets priority",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "ticket_id": { "type": "string" },
+        "priority": { "type": "string" }
+      },
+      "required": ["ticket_id", "priority"]
+    }
+  },
+  {
+    "name": "set_status",
+    "description": "updates the status field",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "ticket_id": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["ticket_id", "status"]
+    }
+  }
+]

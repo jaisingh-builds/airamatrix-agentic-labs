@@ -1,0 +1,5 @@
+# Service capacity limits for the ingest tier.
+# A service is OVER CAPACITY when queue_depth exceeds max_queue_depth.
+max_queue_depth = 500
+max_error_rate = 0.02
+escalation_contact = platform-oncall@airamatrix.internal

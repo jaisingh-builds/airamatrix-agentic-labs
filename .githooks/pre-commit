@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Block credentials from entering the repository.
+# Day 3 teaches secrets hygiene; this enforces it from Day 1.
+set -uo pipefail
+
+# Real keys only - the documented placeholder is allowed.
+PATTERN='(sk-(ant|aira)?-?[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|aws_secret_access_key[[:space:]]*=[[:space:]]*[A-Za-z0-9/+]{30,})'
+ALLOW='sk-PASTE-YOUR-KEY-HERE|sk-gateway-key|sk-\.\.\.'
+
+fail=0
+
+# This repo is shared with 22 participants. Trainer material - the gateway
+# infrastructure, access registers, and the answers - must never enter it.
+for file in $(git diff --cached --name-only --diff-filter=ACMR); do
+  case "$file" in
+    infra/*|.solutions/*|solutions/*|TRAINER.md|*access_register*|*credentials.csv|*/cards/*)
+      echo "BLOCKED: $file is trainer-only material."
+      echo "    It belongs in ../airamatrix-trainer-kit, not in the participant repo."
+      fail=1 ;;
+  esac
+done
+
+for file in $(git diff --cached --name-only --diff-filter=ACM); do
+  [ -f "$file" ] || continue
+  hits=$(grep -nE "$PATTERN" "$file" 2>/dev/null | grep -vE "$ALLOW" || true)
+  if [ -n "$hits" ]; then
+    echo "BLOCKED: $file looks like it contains a credential:"
+    echo "$hits" | head -3 | sed 's/^/    /'
+    fail=1
+  fi
+done
+
+if [ "$fail" = 1 ]; then
+  cat <<'MSG'
+
+Commit refused. Keys belong in .env (gitignored) or ~/.claude/settings.json,
+never in the repository.
+
+If this is a false positive, commit with --no-verify and tell the trainer so the
+pattern can be fixed.
+MSG
+  exit 1
+fi

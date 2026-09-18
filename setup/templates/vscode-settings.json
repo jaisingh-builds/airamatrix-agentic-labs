@@ -1,0 +1,11 @@
+{
+  "claudeCode.environmentVariables": [
+    { "name": "ANTHROPIC_BASE_URL", "value": "https://GATEWAY-HOST" },
+    { "name": "ANTHROPIC_AUTH_TOKEN", "value": "sk-PASTE-YOUR-KEY-HERE" },
+    { "name": "ANTHROPIC_MODEL", "value": "claude-sonnet" },
+    { "name": "ANTHROPIC_DEFAULT_SONNET_MODEL", "value": "claude-sonnet" },
+    { "name": "ANTHROPIC_DEFAULT_OPUS_MODEL", "value": "claude-opus" },
+    { "name": "ANTHROPIC_DEFAULT_HAIKU_MODEL", "value": "claude-haiku" },
+    { "name": "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "value": "1" }
+  ]
+}

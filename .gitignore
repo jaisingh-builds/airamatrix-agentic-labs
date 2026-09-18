@@ -1,0 +1,29 @@
+# secrets
+.env
+*.key
+
+# run artefacts
+traces/
+traces/*.jsonl
+
+# build
+target/
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+
+# editors / os
+.DS_Store
+.idea/
+*.iml
+
+# Trainer-only material must never appear in this repo. It lives in
+# ../airamatrix-trainer-kit, which is not shared with participants.
+infra/
+.solutions/
+solutions/
+TRAINER.md
+access_register*
+*credentials.csv
+cards/

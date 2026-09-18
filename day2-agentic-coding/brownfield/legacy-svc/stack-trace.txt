@@ -1,0 +1,8 @@
+Reported by ops, 2026-09-16 14:22 IST. Batch job aborts partway through the
+nightly invoice run. Roughly one account in forty.
+
+java.lang.NullPointerException: Cannot invoke "String.equals(Object)" because "tier" is null
+	at com.airamatrix.legacy.BillingEngine.calculateInvoice(BillingEngine.java:47)
+	at com.airamatrix.legacy.BillingEngine.calc(BillingEngine.java:33)
+	at com.airamatrix.billing.NightlyRun.process(NightlyRun.java:88)
+	at com.airamatrix.billing.NightlyRun.main(NightlyRun.java:31)

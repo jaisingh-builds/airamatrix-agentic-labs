@@ -1,0 +1,7 @@
+{
+  "service": "ingest-tier",
+  "region": "ap-south-1",
+  "queue_depth": 812,
+  "error_rate": 0.011,
+  "updated": "2026-09-18T09:30:00+05:30"
+}
