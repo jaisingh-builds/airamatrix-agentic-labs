@@ -31,3 +31,9 @@ cards/
 # lab4 run artefact: may contain whatever a half-finished gate let through
 *.sink.log
 .sink.log
+
+# secrets people actually create while experimenting
+*.env
+!.env.example
+*creds*
+!**/schemas/*

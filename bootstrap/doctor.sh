@@ -71,7 +71,7 @@ if [ -n "${ANTHROPIC_BASE_URL:-}" ] && [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] \
   CODE=$(curl -s -m 20 -o /tmp/doctor_resp -w '%{http_code}' -X POST "$ANTHROPIC_BASE_URL/v1/messages" \
     -H "authorization: Bearer $ANTHROPIC_AUTH_TOKEN" -H "anthropic-version: 2023-06-01" \
     -H 'content-type: application/json' \
-    -d '{"model":"claude-sonnet","max_tokens":16,"messages":[{"role":"user","content":"say OK"}]}' 2>/dev/null || echo 000)
+    -d '{"model":"claude-haiku","max_tokens":4,"messages":[{"role":"user","content":"ok"}]}' 2>/dev/null || echo 000)
   case "$CODE" in
     200) ok "model call succeeded" ;;
     401|403) bad "key rejected ($CODE)" "check you copied the whole key; ask the trainer to reissue" ;;

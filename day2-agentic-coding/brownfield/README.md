@@ -42,7 +42,7 @@ bugs included. That is the point. Without it, you cannot tell a refactor from a
 regression.
 
 ```bash
-mvn -q test -pl day2-agentic-coding/brownfield/legacy-svc -am
+mvn test -pl day2-agentic-coding/brownfield/legacy-svc
 ```
 
 Use the agent to generate these — it is good at enumerating cases. Then read

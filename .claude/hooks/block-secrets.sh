@@ -47,7 +47,7 @@ sys.stdout.write("\n".join(p for p in parts if isinstance(p, str)))
 }
 
 if printf '%s' "$proposed" | grep -qE \
-   '(sk-(ant|aira)-?[A-Za-z0-9_-]{20,}|(AKIA|ASIA)[A-Z0-9]{16}|aws_secret_access_key[[:space:]]*[=:][[:space:]]*[^[:alnum:]]?[A-Za-z0-9/+=]{32,})'; then
+   '(sk-(ant|aira)?-?[A-Za-z0-9_-]{20,}|(AKIA|ASIA)[A-Z0-9]{16}|aws_secret_access_key[[:space:]]*[=:][[:space:]]*[^[:alnum:]]?[A-Za-z0-9/+=]{32,})'; then
   echo "Blocked: that edit would write something shaped like a credential." >&2
   echo "Keys belong in .env or ~/.claude/settings.json, never in the repo." >&2
   exit 2

@@ -19,15 +19,22 @@ Then, **once per machine**: run `claude` interactively in this repo and accept
 the trust dialog. The dialog gates the settings that *grant* capability —
 `permissions.allow` and `additionalDirectories` — so until you accept it, this
 repo's allow-list does not apply and you will be prompted for commands the team
-already agreed to. The `deny` and `ask` rules, the `env` block and the hooks
-apply either way.
+already agreed to. The `deny` and `ask` rules and the hooks apply either way.
 
-**Separately**, pin your model. A `403` naming `claude-opus-4-8` is not a trust
-problem: it is the unpinned `opus` alias resolving to Claude Code's built-in
-Bedrock default, which your IAM user cannot invoke. Set `ANTHROPIC_MODEL` to the
-application inference profile ARN on your access slip, in your own environment or
-`~/.claude/settings.json` — never in this repo, which deliberately hardcodes no
-model IDs.
+**Separately**, pin your model. A `403` naming `claude-opus-4-8` is the unpinned
+`opus` alias resolving to Claude Code's built-in default, which the gateway does
+not serve. Pin all four aliases in your own `~/.claude/settings.json` — never in
+this repo, which deliberately hardcodes no model IDs:
+
+```
+ANTHROPIC_MODEL=claude-sonnet
+ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet
+ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus
+ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku
+```
+
+**Do not put an inference profile ARN in `ANTHROPIC_MODEL`.** Those are Day 4,
+for the AgentCore labs that call Bedrock directly. Here they produce a `400`.
 
 ## End-of-day checkpoint
 

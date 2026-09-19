@@ -23,8 +23,10 @@ mvn -q test -pl day1-foundations/lab1-bare-metal-loop/java -am
 node --test day1-foundations/lab1-bare-metal-loop/node
 ```
 
-**Java always needs `-am`.** Without it Maven will not resolve `labkit` and the
-error it gives you (`labkit:jar:1.0.0 was not found`) does not say so.
+**Lab 1's Java module needs `-am`** — it depends on `labkit`, and without it
+Maven says `labkit:jar:1.0.0 was not found`, which does not tell you why.
+`day2-agentic-coding/brownfield/legacy-svc` has no such dependency and builds
+without it.
 
 ## Architecture
 
@@ -79,8 +81,10 @@ Nothing in a lab constructs a URL, a model name or a price.
 - Credentials supplied by a *project* are ignored by Claude Code on purpose — a
   cloned repo must not be able to inject them. Gateway config belongs in your
   own `~/.claude/settings.json`.
-- Two hooks enforce rather than ask: one refuses writes that look like a
-  credential, one refuses destructive shell commands. Both fail closed. If one
+- Three hooks enforce rather than ask: one refuses writes that look like a
+  credential, one protects the files that grade a lab, one refuses destructive
+  shell commands. They **fail open** if they cannot parse their input — the CI
+  scan is the real control and these are the seatbelt. If one
   fires wrongly, that is a bug worth reporting — a guardrail that cries wolf gets
   switched off, and then you have none.
 - `traces/` can contain prompts and file contents. It is gitignored. Keep it that
