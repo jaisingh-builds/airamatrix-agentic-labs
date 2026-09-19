@@ -30,6 +30,23 @@ def _fetch(path, data=None, method=None):
         return response.status, response.read()
 
 
+def _require_our_own_sink(case):
+    """Fail loudly when this process borrowed the sink from another one (F9).
+
+    These suites assert on log CONTENTS. A borrowed sink writes to the same file,
+    but one that is still exiting records nothing — and the assertion then reads
+    0 != 1 with nothing in the traceback naming the cause. Seen twice during the
+    build, then not once across 15 isolated runs, which is exactly the shape of
+    bug that gets re-diagnosed from scratch every time it appears.
+
+    Fails rather than skips: a suite that skips is a suite that quietly stops
+    running, and this one is load-bearing for the lab's headline claim.
+    """
+    if not sink.owns_server():
+        case.fail("this process borrowed the sink from another one; its log is "
+                  "not ours to assert on. Run lab suites sequentially (F9).")
+
+
 class TestSinkLogLocation(unittest.TestCase):
     def test_log_lives_in_the_lab_fixtures_dir(self):
         """Anywhere else and the gitignore rule that covers it does not apply."""
@@ -42,6 +59,7 @@ class TestSinkRecords(unittest.TestCase):
 
     def setUp(self):
         sink.serve_in_background()
+        _require_our_own_sink(self)
         sink.truncate_log()     # per test: a line from the last test is a false failure
 
     def test_get_records_method_path_and_query(self):
@@ -84,6 +102,7 @@ class TestSinkRefusesNothing(unittest.TestCase):
 
     def setUp(self):
         sink.serve_in_background()
+        _require_our_own_sink(self)
         sink.truncate_log()
 
     def test_unusual_methods_are_accepted_and_logged(self):
@@ -110,6 +129,7 @@ class TestSinkRefusesNothing(unittest.TestCase):
 class TestSinkLogLifecycle(unittest.TestCase):
     def setUp(self):
         sink.serve_in_background()
+        _require_our_own_sink(self)
         sink.truncate_log()
 
     def test_requests_append_rather_than_overwrite(self):

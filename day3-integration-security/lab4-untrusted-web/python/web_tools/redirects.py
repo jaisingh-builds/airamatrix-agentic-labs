@@ -34,6 +34,11 @@ class RedirectRefused(Exception):
     into a retry loop is the failure this whole slice exists to prevent.
     """
 
+    #: Travels to the contract and the trace. Every refusal family in this lab
+    #: carries one, so an auditor can count incidents by kind rather than by
+    #: exception class — and so a caller can branch without isinstance chains.
+    code = "redirect"
+
     def __init__(self, url, message):
         super().__init__(message)
         self.url = url          # the Location we would have followed, for the audit line
@@ -42,7 +47,14 @@ class RedirectRefused(Exception):
 class TooManyRedirects(RedirectRefused):
     """The hop cap tripped on a hop that was otherwise allowed. Separate from a
     refusal by `check` because the causes differ: a loop that stays inside the
-    allow-list is still a loop, and no allow-list can ever end one."""
+    allow-list is still a loop, and no allow-list can ever end one.
+
+    Its own code, for the same reason S8 gave the allow-list precedence over the
+    cap: a chain that left the allow-list and a chain that merely went round too
+    many times are different incidents, and a trace that calls both "redirect"
+    cannot tell an operator which one happened."""
+
+    code = "redirect_cap"
 
 
 class _GuardedRedirectHandler(urllib.request.HTTPRedirectHandler):

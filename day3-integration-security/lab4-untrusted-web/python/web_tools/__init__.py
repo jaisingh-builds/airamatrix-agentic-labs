@@ -39,7 +39,8 @@ __all__ = ["fetch_url", "FETCH_URL", "SYSTEM_PROMPT", "Refused", "REFUSAL_CODES"
 # failure teaches it to retry forever, so the code travels to the contract.
 Refused = (PolicyRefusal, EgressRefusal, RedirectRefused)
 REFUSAL_CODES = frozenset(
-    {"scheme", "host", "port", "malformed", "byte_cap", "fetch_cap", "redirect"})
+    {"scheme", "host", "port", "malformed", "byte_cap", "fetch_cap",
+     "redirect", "redirect_cap"})
 
 REACHABLE = sorted(f"{h}" for _, h, _ in ALLOWED)
 

@@ -97,6 +97,36 @@ class TestSchemaMatchesTheCode(unittest.TestCase):
         self.assertEqual(sorted(self.wt.FETCH_URL["input_schema"]["required"]),
                          ["reason", "url"])
 
+    def test_every_refusal_class_actually_carries_its_code(self):
+        """The assertion whose absence let a drifted contract ship.
+
+        S12's docstring promised that every member of `Refused` carries a `.code`
+        in REFUSAL_CODES, and REFUSAL_CODES reserved "redirect" for the redirect
+        family — which set only `.url`. The drift was invisible because the other
+        schema tests compare description TEXT against constants, and this one
+        compares a documented behaviour against the classes that implement it.
+        Found at S13 by an agent whose harness needed the attribute.
+        """
+        from web_tools import redirects
+        samples = [self.wt.PolicyRefusal("host", "m"),
+                   self.wt.EgressRefusal("fetch_cap", "m"),
+                   redirects.RedirectRefused("http://evil.example.net:8144/", "m"),
+                   redirects.TooManyRedirects("http://evil.example.net:8144/", "m")]
+        for exc in samples:
+            with self.subTest(cls=type(exc).__name__):
+                self.assertIsInstance(exc, self.wt.Refused)
+                code = getattr(exc, "code", None)
+                self.assertIn(code, self.wt.REFUSAL_CODES,
+                              f"{type(exc).__name__} carries no contract code")
+
+    def test_a_looping_chain_and_an_off_list_chain_are_different_incidents(self):
+        """S8 gave the allow-list precedence over the cap so the more alarming
+        fact wins. That only reaches an operator if the two carry different
+        codes."""
+        from web_tools import redirects
+        self.assertNotEqual(redirects.RedirectRefused.code,
+                            redirects.TooManyRedirects.code)
+
     def test_every_refusal_family_has_a_code_in_the_contract(self):
         from web_tools import ceilings, gate
         self.assertTrue(gate.REFUSAL_CODES <= self.wt.REFUSAL_CODES)
