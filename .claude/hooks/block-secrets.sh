@@ -7,7 +7,9 @@
 #   - fires on Write and Edit only, so a secret written by a shell command
 #     never reaches it;
 #   - matches the two ACCESS KEY prefixes (AKIA long-term, ASIA temporary)
-#     and two token shapes, not every credential format. AIDA/AROA are IAM
+#     and two token shapes, plus a KEYED aws_secret_access_key assignment -
+#     the bare 40-char secret is not matched on its own because base64 of that
+#     length is far too common to block safely. AIDA/AROA are IAM
 #     user and role IDs, not credentials - matching them only adds false
 #     positives on policy documents;
 #   - scans the PROPOSED CONTENT only. Scanning the whole payload would block
@@ -45,7 +47,7 @@ sys.stdout.write("\n".join(p for p in parts if isinstance(p, str)))
 }
 
 if printf '%s' "$proposed" | grep -qE \
-   '(sk-(ant|aira)-?[A-Za-z0-9_-]{20,}|(AKIA|ASIA)[A-Z0-9]{16})'; then
+   '(sk-(ant|aira)-?[A-Za-z0-9_-]{20,}|(AKIA|ASIA)[A-Z0-9]{16}|aws_secret_access_key[[:space:]]*[=:][[:space:]]*[^[:alnum:]]?[A-Za-z0-9/+=]{32,})'; then
   echo "Blocked: that edit would write something shaped like a credential." >&2
   echo "Keys belong in .env or ~/.claude/settings.json, never in the repo." >&2
   exit 2
