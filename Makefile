@@ -1,8 +1,9 @@
 # AiraMatrix Agentic Labs — one entry point for every day.
 SHELL := /bin/bash
 LAB1 := day1-foundations/lab1-bare-metal-loop
+LAB4 := day3-integration-security/lab4-untrusted-web
 
-.PHONY: help doctor conformance test test-python test-node test-java lab1 clean cost
+.PHONY: help doctor conformance test test-python test-node test-java lab1 lab4-test clean cost
 
 help:
 	@echo "make doctor       - check your machine is ready (run this first)"
@@ -43,3 +44,8 @@ clean:
 	@mvn -q clean 2>/dev/null || true
 	@find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 	@echo "cleaned"
+
+lab4-test:
+	@echo "=== lab4: untrusted web ==="
+	@cd $(LAB4)/python && for t in test_*.py _parts/test_*.py; do \
+	  [ -e "$$t" ] || continue; echo "--- $$t"; python3 "$$t" || exit 1; done

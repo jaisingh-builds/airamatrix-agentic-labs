@@ -27,3 +27,7 @@ TRAINER.md
 access_register*
 *credentials.csv
 cards/
+
+# lab4 run artefact: may contain whatever a half-finished gate let through
+*.sink.log
+.sink.log
