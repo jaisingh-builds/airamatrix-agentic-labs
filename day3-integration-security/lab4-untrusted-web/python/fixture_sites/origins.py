@@ -15,6 +15,7 @@ import http.server
 import json
 import pathlib
 import socket
+import sys
 import threading
 import urllib.parse
 
@@ -227,14 +228,43 @@ def _port_is_open(port: int) -> bool:
         return probe.connect_ex(("127.0.0.1", port)) == 0
 
 
+_borrowed: set = set()
+
+
+def owns_servers() -> bool:
+    """True only if THIS process bound every origin it is using.
+
+    Read this before any assertion about `bytes_written()`. The counter lives in
+    whichever process bound the port: if another one owns it, this process reads
+    a counter nothing is incrementing, and `assertLess(wire, ceiling)` passes on
+    a zero that means "not measured" rather than "not sent".
+    """
+    return bool(_servers) and not _borrowed
+
+
 def serve_in_background():
-    """Start the three origins, skipping any port already being served."""
+    """Start the three origins, borrowing any port already being served.
+
+    Borrowing is deliberate — a trainer can serve the fixtures in one terminal
+    and run a suite in another. It is also a hazard worth one line of noise: the
+    borrowed servers die when their owner exits, and in-flight requests here
+    surface as ConnectionResetError on 8143 with nothing about this module in the
+    traceback. Announce it so that reset has an explanation directly above it.
+    """
     for name, (port, root) in SITES.items():
-        if name in _servers or _port_is_open(port):
+        if name in _servers or name in _borrowed:
+            continue
+        if _port_is_open(port):
+            _borrowed.add(name)
             continue
         handler = functools.partial(_OriginHandler, directory=str(root))
         _servers[name] = _ThreadedOrigin(("127.0.0.1", port), handler)
         threading.Thread(target=_servers[name].serve_forever, daemon=True).start()
+    if _borrowed:
+        print(f"fixture_sites.origins: borrowing {sorted(_borrowed)} from another "
+              f"process; bytes_written() is not measuring them and those servers "
+              f"die when their owner exits. Run lab suites sequentially.",
+              file=sys.stderr)
     return _servers
 
 

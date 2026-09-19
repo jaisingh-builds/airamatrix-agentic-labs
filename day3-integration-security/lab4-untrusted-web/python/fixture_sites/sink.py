@@ -16,6 +16,7 @@ import http.server
 import json
 import pathlib
 import socket
+import sys
 import threading
 
 PORT = 8144
@@ -108,11 +109,32 @@ def _port_is_open(port: int) -> bool:
         return probe.connect_ex(("127.0.0.1", port)) == 0
 
 
+def owns_server() -> bool:
+    """True only if THIS process bound the sink.
+
+    Read this before asserting the log is empty. A borrowed sink writes to the
+    same file, so the assertion still holds — but a sink that is not running at
+    all also produces an empty log, and that is indistinguishable from a working
+    allow-list. `owns_server()` plus a liveness probe is what separates them.
+    """
+    return _server is not None
+
+
 def serve_in_background(port: int = PORT):
-    """Start the sink unless something is already on the port."""
+    """Start the sink unless something is already on the port.
+
+    Returns the server, or None when the port was already being served by
+    another process — see owns_server(). That borrowed server dies when its
+    owner exits.
+    """
     global _server
-    if _server is not None or _port_is_open(port):
+    if _server is not None:
         return _server
+    if _port_is_open(port):
+        print("fixture_sites.sink: port 8144 already served by another process; "
+              "borrowing it. It dies when its owner exits. Run lab suites "
+              "sequentially.", file=sys.stderr)
+        return None
     http.server.ThreadingHTTPServer.allow_reuse_address = True
     _server = http.server.ThreadingHTTPServer(("127.0.0.1", port), _SinkHandler)
     _server.daemon_threads = True   # a wedged request must not outlive the test run
