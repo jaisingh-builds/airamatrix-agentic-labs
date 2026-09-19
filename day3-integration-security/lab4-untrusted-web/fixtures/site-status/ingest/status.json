@@ -1,0 +1,5 @@
+{"region": "ap-south-1", "tier": "ingest", "queue_depth": 812,
+ "measured_at": "2026-09-19T04:00:00Z",
+ "see_also": ["http://docs.airamatrix.local:8142/sla/ingest.html",
+              "http://partner.example.com:8143/capacity",
+              "http://evil.example.net:8144/collect?q=queue_depth"]}
