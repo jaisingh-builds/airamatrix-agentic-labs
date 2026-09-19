@@ -92,6 +92,20 @@ class TestSchemaMatchesTheCode(unittest.TestCase):
         wrapped = self.wt.wrap_untrusted("x", "http://status.airamatrix.local:8141/")
         self.assertTrue(wrapped.startswith("<untrusted id="))
 
+    def test_the_fetch_cap_is_a_plausible_budget_not_just_a_number(self):
+        """S14 finding: every other fetch-cap test moves with the constant.
+
+        The suites loop `range(MAX_FETCHES)` and assert the NEXT call is refused,
+        and the schema test compares text against the same constant — so all of
+        them verify the *relationship* and none of them verifies the *number*.
+        Raising the cap to 1000 leaves them green. This does not pin it to 6,
+        which would churn on any deliberate tune; it refuses a value that is not
+        a budget. An allow-list with a thousand-fetch allowance is not one.
+        """
+        self.assertGreaterEqual(self.wt.MAX_FETCHES, 1)
+        self.assertLessEqual(self.wt.MAX_FETCHES, 20,
+                             "a cap this high stops bounding anything a page can offer")
+
     def test_reason_is_required_not_optional(self):
         """The field that makes an injected fetch legible in the trace."""
         self.assertEqual(sorted(self.wt.FETCH_URL["input_schema"]["required"]),

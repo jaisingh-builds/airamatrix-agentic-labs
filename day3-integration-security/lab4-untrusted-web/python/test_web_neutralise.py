@@ -9,7 +9,7 @@ import sys
 import unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
-LAB = HERE.parents[1]
+LAB = HERE.parents[0]        # the lab dir; parents[1] is day3/ and silently finds no fixtures
 sys.path.insert(0, str(HERE))
 
 from web_tools.neutralise import neutralise  # noqa: E402
@@ -253,14 +253,25 @@ class TestCleanBodyProducesNoFindings(unittest.TestCase):
         self.assertEqual(text, body)   # a clean body is returned untouched
 
     def test_real_sibling_fixtures_are_clean(self):
-        """The JSON fixtures in this lab carry no steering content."""
-        for rel in ("fixtures/site-partner/capacity.json",
-                    "fixtures/site-status/ingest/status.json"):
+        """The JSON fixtures in this lab carry no steering content.
+
+        The count assertion is the point. This passed vacuously in every tree
+        until S15 found it: LAB pointed one level too high, so `is_file()` was
+        always False and a `continue` skipped the loop body entirely. A test that
+        silently checks nothing is worse than no test, because it reports
+        confidence. Asserting that it looked at something makes the vacuous path
+        impossible rather than merely currently-absent.
+        """
+        expected = ("fixtures/site-partner/capacity.json",
+                    "fixtures/site-status/ingest/status.json")
+        checked = 0
+        for rel in expected:
             path = LAB / rel
-            if not path.is_file():
-                continue
+            self.assertTrue(path.is_file(), "missing fixture: %s (LAB=%s)" % (rel, LAB))
             _, found = neutralise(path.read_text(encoding="utf-8"))
             self.assertEqual(found, [], "%s: %s" % (rel, found))
+            checked += 1
+        self.assertEqual(checked, len(expected))
 
     def test_empty_and_none(self):
         self.assertEqual(neutralise(""), ("", []))

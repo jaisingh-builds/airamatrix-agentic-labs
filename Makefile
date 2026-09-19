@@ -49,3 +49,10 @@ lab4-test:
 	@echo "=== lab4: untrusted web ==="
 	@cd $(LAB4)/python && for t in test_*.py; do \
 	  [ -e "$$t" ] || continue; echo "--- $$t"; python3 "$$t" || exit 1; done
+
+# Removes each control in a scratch copy and re-runs the suite. Green here means
+# a control the lab teaches but has never verified, so it exits non-zero.
+.PHONY: lab4-sabotage
+lab4-sabotage:
+	@echo "=== lab4: sabotage (control removal) ==="
+	@python3 $(LAB4)/tools/sabotage.py
