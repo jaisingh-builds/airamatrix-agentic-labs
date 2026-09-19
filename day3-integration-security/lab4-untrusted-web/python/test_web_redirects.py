@@ -10,7 +10,7 @@ a plausible wrong answer rather than an error, which is the worse failure.
 `check` is a stub. S7's real gate is being written next door and the only thing
 this slice may assume about it is "callable, raises on refusal".
 
-Run: cd $LAB/python && python3 _parts/test_s08_redirects.py
+Run: cd $LAB/python && python3 test_web_redirects.py
 """
 import http.server
 import json
@@ -22,9 +22,9 @@ import urllib.error
 
 # Script dir is on sys.path already (that is where s08 lives); the package root
 # is not, and fixture_sites lives there.
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import s08_redirects as s08                       # noqa: E402
+import web_tools.redirects as s08                       # noqa: E402
 from fixture_sites import origins, sink           # noqa: E402
 
 PARTNER = origins.base_url("partner")

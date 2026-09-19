@@ -47,5 +47,5 @@ clean:
 
 lab4-test:
 	@echo "=== lab4: untrusted web ==="
-	@cd $(LAB4)/python && for t in test_*.py _parts/test_*.py; do \
+	@cd $(LAB4)/python && for t in test_*.py; do \
 	  [ -e "$$t" ] || continue; echo "--- $$t"; python3 "$$t" || exit 1; done

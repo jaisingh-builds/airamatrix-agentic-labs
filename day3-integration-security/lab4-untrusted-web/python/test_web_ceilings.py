@@ -22,9 +22,9 @@ import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parent))
+sys.path.insert(0, str(HERE))
 
-import s11_ceilings as ceilings                                  # noqa: E402
+import web_tools.ceilings as ceilings                                  # noqa: E402
 from fixture_sites import origins                                # noqa: E402
 
 # Returns only the origins this process actually started; a port already open is
@@ -560,15 +560,15 @@ class TestRefusalCodes(unittest.TestCase):
         self.assertEqual(codes, set(ceilings.REFUSAL_CODES))
         self.assertEqual(codes, {"byte_cap", "fetch_cap"})
 
-        # Checked against the allow-list slice's own export where it is already
-        # in the tree, so the guarantee survives S7 adding a code later. Falling
-        # back keeps this suite standalone while the siblings are still landing.
-        try:
-            import s07_gate
-            theirs = set(s07_gate.REFUSAL_CODES)
-        except (ImportError, AttributeError):       # pragma: no cover - S7 not landed
-            theirs = {"scheme", "host", "port", "malformed"}
-        self.assertFalse(codes & theirs, "a ceiling code shadows an allow-list code")
+        # Read from the allow-list slice's own export, not a copy of it, so the
+        # guarantee survives either family adding a code later. The fallback this
+        # replaced was written while S7 was still landing; now that it is in the
+        # tree, a fallback could only hide a broken import (it did: an import
+        # rewrite at S12 left a stale reference that the except clause was one
+        # exception type away from swallowing).
+        from web_tools.gate import REFUSAL_CODES as gate_codes
+        self.assertFalse(codes & set(gate_codes),
+                         "a ceiling code shadows an allow-list code")
 
     def test_a_refusal_is_catchable_as_an_exception(self):
         self.assertTrue(issubclass(ceilings.EgressRefusal, Exception))

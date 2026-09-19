@@ -2,7 +2,7 @@
 """S7 offline checks for check_url — the refusal table IS the specification.
 
     cd day3-integration-security/lab4-untrusted-web/python
-    python3 _parts/test_s07_gate.py
+    python3 test_web_gate.py
 
 Every row asserts the refusal *code*, never merely that something raised: a
 check_url that refuses everything passes a table that only checks "raised". The
@@ -23,7 +23,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 # this file is run as a script, and S12 imports it from python/ instead.
 sys.path.insert(0, str(HERE))
 
-from s07_gate import (ALLOWED, REFUSAL_CODES, PolicyRefusal,  # noqa: E402
+import web_tools.gate as gate  # noqa: E402
+from web_tools.gate import (ALLOWED, REFUSAL_CODES, PolicyRefusal,  # noqa: E402
                       _normalise_host, check_url)
 
 STATUS = "http://status.airamatrix.local:8141/ingest/status.json"
@@ -215,7 +216,10 @@ class TestNoNetwork(unittest.TestCase):
     """F1: the gate is string and parse work, and stays that way."""
 
     def test_module_source_touches_no_resolver_or_socket(self):
-        source = (HERE / "s07_gate.py").read_text()
+        # Derived from the module, not spelled as a path: this assertion broke
+        # once already when S12 moved the file, and a path that can go stale
+        # makes a test about the module actually a test about the filesystem.
+        source = pathlib.Path(gate.__file__).read_text()
         for token in ("import socket", "socket.", "getaddrinfo", "gethostby",
                       "urlopen", "urllib.request", "http.client"):
             with self.subTest(token=token):

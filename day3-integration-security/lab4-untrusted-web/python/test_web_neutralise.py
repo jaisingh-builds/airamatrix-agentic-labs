@@ -12,9 +12,9 @@ HERE = pathlib.Path(__file__).resolve().parent
 LAB = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 
-from s10_neutralise import neutralise  # noqa: E402
+from web_tools.neutralise import neutralise  # noqa: E402
 
-FIXTURE = LAB / "fixtures" / "site-docs" / "sla" / "ingest.html"
+FIXTURE = HERE.parent / "fixtures" / "site-docs" / "sla" / "ingest.html"
 
 REQUIRED_KEYS = {"category", "rule", "match", "count", "action",
                  "first_offset", "first_line", "lines", "note"}
