@@ -112,6 +112,12 @@ def ticket_row(db, tid):
     return t
 
 class Handler(BaseHTTPRequestHandler):
+    def handle(self):
+        try:
+            super().handle()
+        except (ConnectionResetError, BrokenPipeError):
+            pass  # the client hung up; there is no one left to answer
+
     protocol_version = "HTTP/1.1"
     server_version = "aira-ops/1.0"
 
