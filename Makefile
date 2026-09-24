@@ -3,13 +3,14 @@ SHELL := /bin/bash
 LAB1 := day1-foundations/lab1-bare-metal-loop
 LAB4 := day3-integration-security/lab4-untrusted-web
 
-.PHONY: help doctor conformance test test-python test-node test-java lab1 lab4-test clean cost
+.PHONY: help doctor conformance test test-python test-node test-java lab1 lab4-test day3-test clean cost
 
 help:
 	@echo "make doctor       - check your machine is ready (run this first)"
 	@echo "make conformance  - check the gateway itself is healthy (trainer)"
 	@echo "make test         - run every lab's offline checks"
 	@echo "make lab1         - run Lab 1.1 (python)"
+	@echo "make day3-test    - run every Day 3 offline suite"
 	@echo "make cost         - show your spend so far"
 	@echo ""
 	@echo "Live checks cost ~1 cent and are opt-in:  LAB_LIVE=1 make test"
@@ -56,3 +57,10 @@ lab4-test:
 lab4-sabotage:
 	@echo "=== lab4: sabotage (control removal) ==="
 	@python3 $(LAB4)/tools/sabotage.py
+
+D3 := day3-integration-security
+day3-test:
+	@echo "=== day3: aira-ops ===" && cd $(D3)/aira-ops && python3 -m unittest -q test_aira_ops
+	@echo "=== day3: 4.2 mcp server ===" && cd $(D3)/lab4-2-mcp-server && python3 -m unittest -q test_mcp_server
+	@echo "=== day3: 4.3 agent service ===" && cd $(D3)/lab4-3-agent-service && python3 -m unittest -q test_stream test_service
+	@$(MAKE) --no-print-directory lab4-test

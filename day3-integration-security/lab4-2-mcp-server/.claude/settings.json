@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__aira-ops__search_tickets",
+      "mcp__aira-ops__get_ticket",
+      "mcp__aira-ops__lookup_account",
+      "mcp__aira-ops__get_config"
+    ],
+    "ask": [
+      "mcp__aira-ops__add_ticket_comment",
+      "mcp__aira-ops__update_ticket_status",
+      "mcp__aira-ops__update_config"
+    ]
+  }
+}

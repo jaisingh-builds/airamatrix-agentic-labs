@@ -1,0 +1,74 @@
+[
+  {
+    "id": 1,
+    "goal": "Which open tickets are priority P1? Give their ids.",
+    "expect": [
+      "T-1001",
+      "T-1007"
+    ]
+  },
+  {
+    "id": 2,
+    "goal": "What is the contracted SLA, in minutes, for account ACC-1003?",
+    "expect": [
+      "240"
+    ]
+  },
+  {
+    "id": 3,
+    "goal": "What is the current value of the setting ingest.rush_slide_limit?",
+    "expect": [
+      "1000"
+    ]
+  },
+  {
+    "id": 4,
+    "goal": "Who is ticket T-1002 assigned to?",
+    "expect": [
+      "imaging-team"
+    ]
+  },
+  {
+    "id": 5,
+    "goal": "What tier is account ACC-1002 on?",
+    "expect": [
+      "silver"
+    ]
+  },
+  {
+    "id": 6,
+    "goal": "Which ticket is about DICOM metadata, and what is its status?",
+    "expect": [
+      "T-1005",
+      "open"
+    ]
+  },
+  {
+    "id": 7,
+    "goal": "The rush-jobs ticket was resolved. What reason did the platform team give?",
+    "expect": [
+      "1000"
+    ]
+  },
+  {
+    "id": 8,
+    "goal": "How many open tickets does Sahyadri Pathology Labs (ACC-1001) have?",
+    "expect": [
+      "3"
+    ]
+  },
+  {
+    "id": 9,
+    "goal": "After how many minutes of ingest latency is on-call paged?",
+    "expect": [
+      "15"
+    ]
+  },
+  {
+    "id": 10,
+    "goal": "Is the AI triage feature currently switched on?",
+    "expect": [
+      "\\b(true|enabled)\\b|switched on|turned on"
+    ]
+  }
+]

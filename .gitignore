@@ -37,3 +37,7 @@ cards/
 !.env.example
 *creds*
 !**/schemas/*
+
+# day3 run artefacts
+*.sqlite
+day3-integration-security/lab4-1-tool-clinic/results/

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AiraMatrix · Triage console</title>
+<style>
+  :root { --navy:#13294B; --teal:#0D9488; --tint:#EEF4F8; --ink:#1F2937; --muted:#64748B; --amber:#B45309; --red:#B91C1C; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:#fff; }
+  header { background:var(--navy); color:#fff; padding:14px 24px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:#9fb3c8; font-size:13px; }
+  main { display:grid; grid-template-columns: 340px 1fr; gap:20px; padding:20px 24px; max-width:1400px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--tint); border-radius:10px; padding:16px; }
+  h2 { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--teal); margin:0 0 10px; }
+  select, button { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid #cbd5e1; }
+  button { cursor:pointer; background:var(--teal); color:#fff; border:none; font-weight:600; }
+  button.secondary { background:#fff; color:var(--red); border:1px solid var(--red); }
+  button:disabled { opacity:.45; cursor:default; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  #meta { font-size:13px; color:var(--muted); margin-top:10px; min-height:20px; }
+  #activity { list-style:none; margin:0; padding:0; font:12.5px/1.45 ui-monospace,Menlo,monospace; }
+  #activity li { padding:5px 0; border-bottom:1px solid #dbe4ec; }
+  #activity .call { color:var(--navy); }
+  #activity .ok { color:var(--teal); }
+  #activity .err { color:var(--red); }
+  #answer { white-space:pre-wrap; background:#fff; border:1px solid #dbe4ec; border-radius:10px; padding:16px; min-height:260px; }
+  #answer.partial { border-color:var(--amber); }
+  .banner { padding:8px 12px; border-radius:8px; margin-bottom:10px; font-size:13px; font-weight:600; display:none; }
+  .banner.show { display:block; }
+  .banner.warn { background:#fef3c7; color:var(--amber); }
+  .banner.good { background:#e6f5f3; color:var(--teal); }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  td, th { text-align:left; padding:5px 6px; border-bottom:1px solid #dbe4ec; }
+  th { color:var(--muted); font-weight:600; }
+  .note { font-size:12px; color:var(--muted); margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AiraMatrix · Triage console</h1>
+  <span class="sub">agent: read-only tools · streamed · timeout, cancel, budget enforced server-side</span>
+</header>
+<main>
+  <section>
+    <div class="card">
+      <h2>Run</h2>
+      <div class="row">
+        <select id="acct" aria-label="Account">
+          <option value="ACC-1001">ACC-1001 · Sahyadri Pathology Labs</option>
+          <option value="ACC-1002">ACC-1002 · Coastal Diagnostics</option>
+          <option value="ACC-1003">ACC-1003 · Northgate Cancer Centre</option>
+          <option value="ACC-1004">ACC-1004 · Meridian Histology</option>
+          <option value="ACC-1005">ACC-1005 · Riverbend Research Institute</option>
+        </select>
+        <button id="go">Triage</button>
+        <button id="stop" class="secondary" disabled>Cancel</button>
+      </div>
+      <div id="meta"></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>What the agent is doing</h2>
+      <ul id="activity"></ul>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>Run history</h2>
+      <table><thead><tr><th>run</th><th>account</th><th>status</th><th>steps</th><th>$</th></tr></thead><tbody id="hist"></tbody></table>
+      <div class="note">Every run and every event is persisted. <code>GET /api/runs/&lt;id&gt;</code> returns the full trace.</div>
+    </div>
+  </section>
+  <section>
+    <div id="banner" class="banner"></div>
+    <div id="answer" aria-live="polite"></div>
+  </section>
+</main>
+<script>
+// Everything the model says goes in as TEXT. Never innerHTML: model output is
+// untrusted, and rendering it as markup is OWASP LLM "insecure output handling".
+const $ = (id) => document.getElementById(id);
+let es = null, runId = null;
+
+function line(cls, text) {
+  const li = document.createElement("li");
+  li.className = cls; li.textContent = text;
+  $("activity").appendChild(li);
+}
+
+async function history() {
+  const rows = await (await fetch("/api/runs")).json();
+  const body = $("hist"); body.replaceChildren();
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    tr.title = "replay this run"; tr.style.cursor = "pointer"; tr.onclick = () => replay(r.id);
+    for (const v of [r.id.slice(0, 6), r.account_id, r.status, r.steps ?? "", (r.cost_usd ?? 0).toFixed(3)]) {
+      const td = document.createElement("td"); td.textContent = v; tr.appendChild(td);
+    }
+    body.appendChild(tr);
+  }
+}
+
+// One place that knows how to draw each event: used live (SSE) and for replay (from the DB).
+function apply(type, d) {
+  if (type === "status") $("meta").textContent = `${d.message} · limits: ${d.timeout_s}s, ${d.max_steps} steps, $${d.budget_usd}`;
+  if (type === "text") $("answer").textContent += d.delta;
+  if (type === "retry") { $("answer").textContent = $("answer").textContent.slice(0, d.keep_chars); line("err", `  ↻ ${d.reason}`); }
+  if (type === "tool_call") line("call", `→ ${d.name}(${JSON.stringify(d.input)})`);
+  if (type === "tool_result") line(d.error ? "err" : "ok", `  ${d.error ? "✗" : "✓"} ${d.summary}`);
+  if (type === "done") {
+    $("go").disabled = false; $("stop").disabled = true;
+    $("meta").textContent = `${d.status} · ${d.steps} model calls · $${d.cost_usd}`;
+    const b = $("banner");
+    if (d.partial) { b.className = "banner show warn"; $("answer").className = "partial";
+      b.textContent = `Stopped: ${d.status}. Showing what was found so far — nothing was changed.`; }
+    else { b.className = "banner show good"; b.textContent = "Complete. Proposed changes need a human to apply them."; }
+    history();
+  }
+}
+
+function reset() {
+  $("activity").replaceChildren(); $("answer").textContent = ""; $("answer").className = "";
+  $("banner").className = "banner";
+}
+
+$("go").onclick = async () => {
+  reset(); $("meta").textContent = "starting…";
+  const res = await fetch("/api/triage", { method: "POST", headers: { "content-type": "application/json" },
+                                          body: JSON.stringify({ account_id: $("acct").value }) });
+  const j = await res.json();
+  if (!res.ok) { $("meta").textContent = j.error; return; }
+  runId = j.run_id; $("go").disabled = true; $("stop").disabled = false;
+  es = new EventSource(j.events);
+  for (const t of ["status", "text", "retry", "tool_call", "tool_result", "done"])
+    es.addEventListener(t, (e) => { if (t === "done") es.close(); apply(t, JSON.parse(e.data)); });
+  es.onerror = () => { $("meta").textContent += " · stream closed"; };
+};
+
+// Persistence you can see: replay any past run from the database, event by event.
+async function replay(id) {
+  const res = await fetch(`/api/runs/${encodeURIComponent(id)}`);
+  if (!res.ok) { $("meta").textContent = "no such run"; return; }
+  const r = await res.json();
+  reset(); $("acct").value = r.account_id;
+  for (const ev of r.events) apply(ev.type, JSON.parse(ev.data));
+  if (!r.events.some((e) => e.type === "done")) $("meta").textContent = `${r.status} · ${r.error ?? ""}`;
+}
+
+$("stop").onclick = async () => {
+  if (runId) await fetch(`/api/runs/${runId}/cancel`, { method: "POST" });
+  $("stop").disabled = true; $("meta").textContent = "cancelling…";
+};
+
+history();
+const deep = new URLSearchParams(location.search).get("run");
+if (deep) replay(deep);
+</script>
+</body>
+</html>

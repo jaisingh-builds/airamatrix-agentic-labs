@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "aira-ops": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["--experimental-strip-types", "--no-warnings", "server.ts"],
+      "env": {
+        "AIRA_OPS_TOKEN": "${AIRA_OPS_TOKEN}",
+        "AIRA_OPS_URL": "${AIRA_OPS_URL:-http://127.0.0.1:8150}"
+      }
+    }
+  }
+}
