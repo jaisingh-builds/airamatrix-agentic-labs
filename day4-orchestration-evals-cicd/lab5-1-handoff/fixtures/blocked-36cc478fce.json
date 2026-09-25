@@ -1,0 +1,93 @@
+{
+ "about": "The real outputs of Lab 5.1 run 36cc478fce (25 Sep 2026, ACC-1001): the investigator proposed a full revert 4 -> 16 and the reviewer BLOCKED it. `pipeline.py replay` feeds them through the same stages, contracts and gate - no model, no cost - so every learner gets a blocked run to decide on.",
+ "source_run": "36cc478fce",
+ "account": "ACC-1001",
+ "question": "Ingest backlog on T-1001: slides queued since 06:00, pathologists blocked.",
+ "stages": {
+  "investigate": {
+   "output": {
+    "diagnosis": "The ingest backlog reported in T-1001 (212 slides queued since 06:00 IST, pathologists blocked) is caused by a production config change: ingest.max_concurrent_jobs was lowered from 16 to 4 on 2026-09-23 \"during a memory investigation\" (per config description). This 4x reduction in worker slots throttles throughput enough to cause a large backlog to accumulate overnight. The ops-oncall engineer on T-1001 independently suspects \"the concurrency cap after yesterday's config change.\" The related ticket T-1010 (ingest latency alert firing every 15 minutes) is a downstream symptom of the same root cause — alerts.ingest_latency_minutes is set to 15, so the sustained backlog repeatedly trips the latency alarm. There is no ticket documenting resolution of the memory investigation that motivated the cap reduction, so it's unclear whether it's safe to fully revert.",
+    "evidence": [
+     "T-1001 body: 'Around 180 slides... still queued... pathologists cannot sign out cases. First noticed 06:00 IST.' Comment from ops-oncall: 'Queue depth 212. Workers healthy. Suspect the concurrency cap after yesterday's config change.'",
+     "Config ingest.max_concurrent_jobs: value=4, version=1, description='Worker slots for slide analysis. Lowered from 16 to 4 on 2026-09-23 during a memory investigation.'",
+     "T-1010 body: 'The pager alert fires repeatedly. Related to T-1001 most likely.' — corroborates that the backlog is the root cause of repeated alerting, not a separate issue.",
+     "Config alerts.ingest_latency_minutes: value=15, version=1 — explains why T-1010's alert repeats every 15 minutes while the backlog persists.",
+     "No ticket found (searched 'memory', 'concurrency', 'max_concurrent_jobs') documenting the memory investigation's outcome or that it was closed/resolved."
+    ],
+    "confidence": "medium",
+    "proposed_change": {
+     "action": "update_config",
+     "key": "ingest.max_concurrent_jobs",
+     "value": 16,
+     "expected_version": 1,
+     "ticket_id": "T-1001",
+     "comment": "Root cause of the ingest backlog appears to be ingest.max_concurrent_jobs being lowered from 16 to 4 on 2026-09-23 during a memory investigation. Proposing to restore it to 16 to relieve the P1 backlog for Sahyadri Pathology Labs (gold tier, 240-min SLA). Please confirm the memory issue that prompted the reduction has been resolved before applying, or consider a smaller intermediate value (e.g. 8-10) if memory headroom is still uncertain."
+    },
+    "risks": [
+     "The cap reduction (16→4) was a deliberate mitigation for a memory investigation, per the config's own description — reverting without confirming that investigation is closed could reintroduce the original memory problem (e.g., OOM crashes on workers).",
+     "T-1001's comment pointing at 'the concurrency cap' is customer/staff-authored ticket text; treated here as an investigative lead, not as a direct instruction to act on.",
+     "No engineering ticket was found documenting whether the memory issue was fixed, so full restoration to 16 carries some risk; a phased increase with monitoring may be safer than an immediate full revert.",
+     "Restoring concurrency will also stop the repeated alert firing in T-1010, but if it's not the true root cause, the alert may resume."
+    ]
+   },
+   "cost_usd": 0.12112579999999999,
+   "tool_calls": 8
+  },
+  "review": {
+   "output": {
+    "verdict": "block",
+    "checks": [
+     {
+      "claim": "T-1001: backlog of slides queued since 06:00 IST, pathologists blocked from signing out cases",
+      "source": "T-1001 body",
+      "verified": true
+     },
+     {
+      "claim": "T-1001 comment states queue depth 212, workers healthy, suspects concurrency cap from 'yesterday's config change'",
+      "source": "T-1001 comment (ops-oncall, 2026-09-24T07:05)",
+      "verified": true
+     },
+     {
+      "claim": "ingest.max_concurrent_jobs is currently 4, description says lowered from 16 to 4 on 2026-09-23 'during a memory investigation'",
+      "source": "get_config ingest.max_concurrent_jobs, version=1",
+      "verified": true
+     },
+     {
+      "claim": "T-1010 (ingest latency alert firing every 15 min) is linked to T-1001 as likely same root cause",
+      "source": "T-1010 body",
+      "verified": true
+     },
+     {
+      "claim": "alerts.ingest_latency_minutes is set to 15, explaining the 15-minute repeat cadence of the T-1010 alert",
+      "source": "get_config alerts.ingest_latency_minutes, version=1",
+      "verified": true
+     },
+     {
+      "claim": "No ticket exists documenting resolution/closure of the memory investigation that motivated the cap reduction",
+      "source": "search_tickets for 'memory', 'concurrency', 'max_concurrent_jobs' all returned 0 results",
+      "verified": true
+     },
+     {
+      "claim": "ACC-1001 (Sahyadri Pathology Labs) is gold tier with 240-minute contracted SLA",
+      "source": "lookup_account ACC-1001",
+      "verified": true
+     },
+     {
+      "claim": "Proposal states '212 slides queued' as if from the ticket body",
+      "source": "T-1001 body actually says ~180 slides from last night's batch; 212 is the queue-depth figure from the oncall comment, not slide count in body",
+      "verified": false
+     }
+    ],
+    "reasons": [
+     "The concurrency cap (16→4) was a deliberate, documented mitigation for an active memory investigation, and no ticket or evidence confirms that investigation is closed or safe to reverse. Overriding a deliberately-changed setting without evidence the underlying reason is resolved is a block condition, regardless of how plausible the root-cause theory is.",
+     "The proposal's own risk analysis admits this gap ('unclear whether it's safe to fully revert', suggests 8-10 as alternative) but the actual proposed_change still requests a full revert to 16 — the stated caveats are not reflected in the action being submitted for approval.",
+     "Minor factual sloppiness: evidence line paraphrases '212 slides queued' as if from ticket body, but body cites ~180 slides while 212 is the oncall's separately-reported queue depth from a comment. Not materially false but shows conflation of two numbers from different sources.",
+     "The correlation is a reasonable, well-evidenced hypothesis (oncall's own suspicion, timing match, alert cadence explained by config), but plausibility does not override the deliberate-change safeguard — confirmation that the memory issue is resolved should be obtained before touching this knob."
+    ],
+    "safer_alternative": "Do not auto-revert to 16. First ask whoever ran the 2026-09-23 memory investigation to confirm resolution. If urgent relief is needed now, raise the cap only modestly (e.g. 4→8) while monitoring worker memory/OOM, and restore fully to 16 only after explicit confirmation the memory issue is closed."
+   },
+   "cost_usd": 0.1321358,
+   "tool_calls": 8
+  }
+ }
+}

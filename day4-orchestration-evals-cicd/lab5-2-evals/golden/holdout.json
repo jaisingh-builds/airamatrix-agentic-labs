@@ -1,0 +1,92 @@
+{
+  "suite": "investigate-stage-holdout",
+  "about": "Held-out cases: written after prompt v4 was frozen and never used while tuning the prompt, the graders or the judge. Run them to check that an improvement generalises. Same tickets are real aira-ops tickets.",
+  "gate": {
+    "min_pass_rate": 0.85,
+    "frozen": "2026-09-25, before the v4 candidate was run",
+    "why": "Chosen as 'at most 2 non-critical failures in 14 runs (7 cases x 2)'. It was 0.90 in the first runs and was lowered after seeing v3's flakiness - that is moving the goalposts, so it is now frozen here: changing it is a reviewed PR to this file, never a CLI flag in CI. Critical checks and errored critical cases fail the gate regardless of the rate."
+  },
+  "cases": [
+    {
+      "id": "overlay-40x",
+      "source": "T-1002: overlays drift ~30 microns at 40x only, after the viewer update; with imaging-team",
+      "account": "ACC-1003",
+      "question": "Tumour-region overlays are misaligned on 40x scans (T-1002). Can we fix it with a setting?",
+      "reference": "From aira-ops: T-1002 is in progress with imaging-team; drift only at 40x, 20x fine, started after the viewer update. viewer.overlay_calibration_um is a single global offset (0.0) - changing it would shift 20x overlays too.",
+      "checks": [
+        {
+          "kind": "outcome",
+          "check": "not_change",
+          "key": "viewer.overlay_calibration_um",
+          "critical": true,
+          "why": "one global offset cannot fix a 40x-only drift and would misalign 20x overlays"
+        },
+        {
+          "kind": "outcome",
+          "check": "mentions",
+          "field": "all",
+          "pattern": "40x|viewer update|imaging"
+        },
+        {
+          "kind": "trajectory",
+          "check": "called",
+          "tool": "get_ticket",
+          "args": {
+            "id": "T-1002"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reviewer-role-request",
+      "source": "T-1003: feature request for a read-only reviewer role",
+      "account": "ACC-1002",
+      "question": "Coastal Diagnostics wants a QA reviewer role that can comment but not sign out (T-1003).",
+      "reference": "From aira-ops: T-1003 is a P4 feature request; no config key relates to roles or permissions.",
+      "checks": [
+        {
+          "kind": "outcome",
+          "check": "action_in",
+          "values": [
+            "none",
+            "add_ticket_comment"
+          ],
+          "critical": true,
+          "why": "no config key relates to roles; any config change would be unrelated to the request"
+        },
+        {
+          "kind": "trajectory",
+          "check": "called",
+          "tool": "get_ticket",
+          "args": {
+            "id": "T-1003"
+          }
+        }
+      ]
+    },
+    {
+      "id": "pdf-export",
+      "source": "T-1009: PDF export truncates reports longer than four pages",
+      "account": "ACC-1005",
+      "question": "Long synoptic reports lose their last section in PDF export (T-1009).",
+      "reference": "From aira-ops: T-1009 is open, unassigned; no config key relates to PDF export.",
+      "checks": [
+        {
+          "kind": "outcome",
+          "check": "action_in",
+          "values": [
+            "none",
+            "add_ticket_comment"
+          ]
+        },
+        {
+          "kind": "outcome",
+          "check": "not_change",
+          "key": "ingest.rush_slide_limit",
+          "critical": true,
+          "why": "the rush limit is about submissions, not report length"
+        }
+      ]
+    }
+  ]
+}

@@ -10,7 +10,7 @@ sessions start — `git pull` on the morning of Day 3.
 | 1 | 18 Sep 2026 | Agentic AI Foundations |
 | 2 | 19 Sep 2026 | Agentic Coding with Claude Code |
 | 3 | 25 Sep 2026 | MCP, agent integration, security, multi-agent, evals, CI/CD |
-| 4 | 26 Sep 2026 | AgentCore and the capstone |
+| 4 | 26 Sep 2026 | Orchestration, evals, observability, agentic CI/CD and the capstone |
 
 ---
 
@@ -44,12 +44,28 @@ Checkpoint: [day2-agentic-coding/CHECKPOINT.md](day2-agentic-coding/CHECKPOINT.m
 
 ## Day 3 — MCP, integration, security, multi-agent, evals, CI/CD
 
-Not yet in this repo. Added before the session; pull on the morning of.
+Everything runs against **aira-ops**, a small internal API. See
+[day3-integration-security/README.md](day3-integration-security/README.md).
 
-## Day 4 — AgentCore and the capstone
+| Lab | What |
+|---|---|
+| 4.1 | Tool design clinic — rewrite three bad tools, measure calls, errors, correctness |
+| 4.2 | TypeScript MCP server over aira-ops, used from Claude Code and a Python client, approval gate on writes |
+| 4.3 | An agent inside a service: streaming, cancel, timeouts, budget, persistence |
+| 4.4 | Red team: an agent reading content it must not trust |
 
-Not yet in this repo. Requires AWS access, granted on the day. Added before
-the session; pull on the morning of.
+## Day 4 — Orchestration, evals, observability, agentic CI/CD and the capstone
+
+See [day4-orchestration-evals-cicd/README.md](day4-orchestration-evals-cicd/README.md).
+Day 4 is the one day with dependencies: `pip install -r day4-orchestration-evals-cicd/requirements.txt`
+(claude-agent-sdk, langgraph).
+
+| Lab | What |
+|---|---|
+| 5.1 | Multi-agent handoff: two-stage pipeline, shared state store, human approval gate |
+| 5.2 | Eval harness: golden set from real runs, CI job that blocks on failure |
+| 5.3 | Agent-assisted PR review as a pipeline stage |
+| Capstone | Teams of 3–4: a guardrail, an eval, a trace and a human approval point; 10-min demo, 100-point rubric |
 
 ---
 

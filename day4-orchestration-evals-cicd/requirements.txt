@@ -1,0 +1,6 @@
+# Day 4 only: the rest of the repo stays stdlib-only.
+# Pinned to the versions the labs were verified with.
+claude-agent-sdk==0.2.159
+langgraph==1.2.12
+langgraph-checkpoint-sqlite==3.1.1
+langgraph-checkpoint==4.2.0      # pulled in by the two above; pinned so a new release can't change resume behaviour

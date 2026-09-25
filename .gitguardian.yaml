@@ -1,0 +1,8 @@
+version: 2
+# Same documented exceptions as .gitleaks.toml: fake secrets used by the Day 4 tests and demos.
+secret:
+  ignored_paths:
+    - day4-orchestration-evals-cicd/lab5-3-pr-review/test_review.py
+    - day4-orchestration-evals-cicd/lab5-3-pr-review/demo_prs.py
+    - day4-orchestration-evals-cicd/common/test_spans.py
+    - day4-orchestration-evals-cicd/lab5-2-evals/test_graders.py

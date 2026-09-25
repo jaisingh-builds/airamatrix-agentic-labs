@@ -1,0 +1,10 @@
+# A CODEOWNERS file alone does not block anything. It takes effect when branch protection (or a
+# ruleset) on main has "Require review from Code Owners" turned on.
+# Prompts, golden sets, graders and the pipeline that runs them change agent behaviour: they need
+# an owner's review exactly like code does.
+/day4-orchestration-evals-cicd/lab5-1-handoff/agents.py      @jaisingh-builds
+/day4-orchestration-evals-cicd/lab5-1-handoff/contracts.py   @jaisingh-builds
+/day4-orchestration-evals-cicd/lab5-2-evals/golden/          @jaisingh-builds
+/day4-orchestration-evals-cicd/lab5-2-evals/graders.py       @jaisingh-builds
+/day4-orchestration-evals-cicd/lab5-3-pr-review/review.py    @jaisingh-builds
+/.github/                                                    @jaisingh-builds
