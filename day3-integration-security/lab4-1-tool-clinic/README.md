@@ -22,6 +22,9 @@ reliability figure: repeat paired runs before claiming more.
 | bad  | 8/10  | 3.8 | 15 | $0.085 |
 | good | 10/10 | 1.2 | 1  | $0.067 |
 
+A second `good` run later the same morning, after adding `maxLength` and
+`additionalProperties: false` to its schema: 10/10, 1.1 calls/goal, 0 errors, $0.064.
+
 Read the middle columns, not the first. A strong model **compensates** for bad
 tools by brute force: three times the calls, fifteen times the errors, and one
 goal ran out of steps after fourteen guesses at a config key it had no way to

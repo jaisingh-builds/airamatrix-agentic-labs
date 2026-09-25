@@ -41,3 +41,6 @@ cards/
 # day3 run artefacts
 *.sqlite
 day3-integration-security/lab4-1-tool-clinic/results/
+
+# aira-ops caller registry (hashes only, but per-machine)
+callers.json

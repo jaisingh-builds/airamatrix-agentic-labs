@@ -51,7 +51,8 @@ GOOD = [
          "status": {"type": "string", "enum": ["open", "in_progress", "resolved", "closed"]},
          "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "P1 is most urgent"},
          "account_id": {"type": "string", "pattern": "^ACC-\\d{4}$", "description": "e.g. ACC-1001"},
-         "query": {"type": "string", "description": "Words to match in title or body, e.g. 'DICOM'"}}}},
+         "query": {"type": "string", "maxLength": 500, "description": "Words to match in title or body, e.g. 'DICOM'"}},
+         "additionalProperties": False}},
     {"name": "get_ticket",
      "description": "Full ticket by id: body, status, assignee and every comment (resolutions are in comments).",
      "input_schema": {"type": "object", "properties": {
