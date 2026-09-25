@@ -21,6 +21,8 @@ python3 aira-ops/aira_ops.py --reset
 make day3-test      # every Day 3 offline suite, no gateway calls
 ```
 
+**On Windows:** see [bootstrap/WINDOWS.md](../bootstrap/WINDOWS.md), where one PowerShell script does setup, start and tests.
+
 ## Checkpoint
 
 Each team demonstrates an MCP server serving at least three tools to Claude

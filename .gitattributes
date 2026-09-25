@@ -1,0 +1,9 @@
+# Check every text file out with LF, on every OS. Windows' default (autocrlf)
+# rewrites fixtures and scripts to CRLF, which breaks byte-exact tests and bash.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.sqlite binary
+*.jar binary
+*.png binary
