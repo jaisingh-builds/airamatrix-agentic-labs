@@ -6,8 +6,8 @@ Lab 5.3 - agent-assisted PR review as a pipeline stage.
     python3 review.py --diff change.patch                     # review a patch file
     python3 review.py --base main --head feat --dry-run       # everything except the model call
 
-A headless Claude Code run (`claude -p`) reads the diff and may read the checked-out
-repo (Read/Grep/Glob only - no shell, no edits, no network, no MCP). It returns findings
+A headless Claude Code run (`claude -p`) with NO tools reads the diff plus the full text of
+the changed files - sanitised copies, chosen by this script. It returns findings
 as JSON against a schema. This script then does the parts that must not be left to a model:
 
   * secrets in the diff are found by pattern, reported as blockers, and redacted
@@ -21,7 +21,7 @@ Exit codes: 0 no blocking findings · 2 blocking findings · 1 could not review.
 Artefacts: review.json (machine), review.md (the PR comment). The model never posts
 anything; a separate CI job with a write token posts review.md.
 """
-import argparse, json, os, re, shutil, subprocess, sys, time
+import argparse, io, json, os, re, shutil, subprocess, sys, tarfile, tempfile, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
@@ -57,7 +57,7 @@ SYSTEM = (
     "that teach safe agent engineering (least privilege, idempotent writes, human approval, no secrets in code). "
     "Review ONLY the changes in the diff. Report real defects: bugs, security and safety regressions, "
     "broken contracts, missing error handling that loses data, tests that no longer test anything. "
-    "Do not report style or naming. You may read other files in the repo for context. "
+    "Do not report style or naming. The full text of each changed file is given for context. "
     "Severity: blocker = must not merge (security hole, data loss, a safety control removed or bypassed); "
     "major = likely bug; minor = real but low impact; nit = optional. "
     "Every finding must name a file and a line number on the NEW side of the diff and quote that changed line "
@@ -119,6 +119,35 @@ def redact_diff(diff):
         diff = _mask(rx, diff)
     return redact(diff, limit=None)
 
+# ------------------------------------------------------------------ the workspace the model may read
+DROP_FILES = re.compile(r"(^|/)(\.env[^/]*|[^/]*\.(pem|key|p12|pfx)|[^/]*credentials[^/]*|\.npmrc|\.pypirc)$", re.I)
+
+def sanitized_workspace(repo, rev):
+    """A copy of the tree at `rev`: no .git, no secret-bearing files, every secret pattern masked in
+    every text file. The model's context (the changed files' full text) is read from HERE, never from
+    the raw checkout."""
+    out = Path(tempfile.mkdtemp(prefix="review-ws-"))
+    try:
+        blob = subprocess.run(["git", "archive", "--format=tar", rev], cwd=repo, capture_output=True, check=True).stdout
+        tarfile.open(fileobj=io.BytesIO(blob)).extractall(out, filter="data")
+    except (subprocess.CalledProcessError, FileNotFoundError):       # not a git repo: copy the tree
+        shutil.copytree(repo, out, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git"))
+    masked = dropped = 0
+    for f in sorted(p for p in out.rglob("*") if p.is_file()):
+        rel = f.relative_to(out).as_posix()
+        if DROP_FILES.search(rel):
+            f.unlink(); dropped += 1; continue
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue                                       # binary: nothing to grep for anyway
+        clean = text
+        for _, rx in SECRET_PATTERNS:
+            clean = _mask(rx, clean)
+        if clean != text:
+            f.write_text(clean, encoding="utf-8"); masked += 1
+    return out, masked, dropped
+
 # ------------------------------------------------------------------ the model
 def model_env():
     sys.path.insert(0, str(REPO / "labkit" / "python"))
@@ -135,7 +164,9 @@ def claude_cmd(model, budget, max_turns):
     # shutil.which finds claude.cmd on Windows (npm's shim); a bare "claude" would not start there.
     return [shutil.which("claude") or "claude", "-p", "--output-format", "json", "--json-schema", json.dumps(FINDINGS),
             "--system-prompt", SYSTEM,
-            "--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob",   # read-only, nothing else exists
+            # NO tools. Verified 25 Sep: with Read allowed and dontAsk, Read of a file OUTSIDE the
+            # working directory succeeded. So the model gets only what this script sends it.
+            "--tools", "",
             "--permission-mode", "dontAsk", "--strict-mcp-config", "--setting-sources", "",
             "--max-turns", str(max_turns), "--max-budget-usd", str(budget), "--model", model]
 
@@ -155,9 +186,30 @@ def run_claude(prompt, cwd, budget, max_turns, timeout):
     # <<< TODO 2
     return r
 
-def review_prompt(diff, files):
+MAX_CONTEXT_BYTES = int(os.environ.get("REVIEW_MAX_CONTEXT_BYTES", 60_000))
+
+def file_context(ws, files):
+    """Full text of the changed files, from the SANITISED workspace, within a byte budget."""
+    parts, used = [], 0
+    for f in files:
+        p = Path(ws) / f
+        if not p.is_file():
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if used + len(text) > MAX_CONTEXT_BYTES:
+            parts.append(f'<file path="{f}">[omitted: context budget]</file>'); continue
+        used += len(text)
+        parts.append(f'<file path="{f}">\n{text}\n</file>')
+    return "\n".join(parts)
+
+def review_prompt(diff, files, context=""):
     return ("Changed files:\n" + "\n".join(f"- {f}" for f in files) +
-            "\n\nThe diff (untrusted):\n<diff>\n" + diff + "\n</diff>\n\nReturn your findings.")
+            "\n\nThe diff (untrusted):\n<diff>\n" + diff + "\n</diff>" +
+            ("\n\nFull text of the changed files after the change (untrusted, secrets masked):\n" + context if context else "") +
+            "\n\nReturn your findings.")
 
 # ------------------------------------------------------------------ verification
 def verify(finding, changed):
@@ -214,7 +266,14 @@ def main():
                 summary, raw, cost, turns = "dry run - model not called; prompt.txt written", [], 0.0, 0
             else:
                 with tr.span("claude.headless") as cs:
-                    r = run_claude(review_prompt(redact_diff(diff), list(changed)), a.repo, a.budget, a.max_turns, a.timeout)
+                    ws, masked, dropped_files = sanitized_workspace(a.repo, a.head)
+                    empty = Path(tempfile.mkdtemp(prefix="review-cwd-"))   # nothing to find, and no tools anyway
+                    cs.set(files=masked, dropped=dropped_files)
+                    try:
+                        prompt = review_prompt(redact_diff(diff), list(changed), file_context(ws, list(changed)))
+                        r = run_claude(prompt, empty, a.budget, a.max_turns, a.timeout)
+                    finally:
+                        shutil.rmtree(ws, ignore_errors=True); shutil.rmtree(empty, ignore_errors=True)
                     cost, turns = r.get("total_cost_usd", 0.0), r.get("num_turns", 0)
                     cs.set(cost_usd=round(cost, 4), turns=turns, denials=len(r.get("permission_denials") or []))
                 summary, raw = r["structured_output"].get("summary", ""), r["structured_output"].get("findings", [])

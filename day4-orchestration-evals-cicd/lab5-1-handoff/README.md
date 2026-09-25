@@ -17,23 +17,47 @@
   field), stores an operation id *before* sending, and uses a write token no
   agent ever sees. Running it twice is safe.
 
-Least privilege, twice: agents get a caller token scoped to one account and
-read-only, and the MCP server is started with `AIRA_OPS_READONLY=1`, no built-in
-tools, `strict_mcp_config`, no settings sources, `permission_mode="dontAsk"`.
+Least privilege, three times: agents get a caller token scoped to one account and
+read-only; the MCP server is started with `AIRA_OPS_READONLY=1`, no built-in tools,
+`strict_mcp_config`, no settings sources, `permission_mode="dontAsk"`; and the
+**process** that starts agents holds no write token. The SDK starts Claude Code with
+`{**os.environ, **options.env}` - `options.env` adds, it cannot remove - so `run` and
+`resume` drop every secret-named variable except the gateway key before the first agent
+starts, and `SdkRunner` refuses to start while a write/admin token is present. `apply`
+starts no agent and is the only command that reads `AIRA_OPS_APPLY_TOKEN`.
+`test_the_agent_subprocess_environment_holds_no_write_or_admin_token` proves it with a
+stub `claude` that records the environment it was given.
+
+The approval is bound to the proposal: `approvals.proposal_sha` is the hash of the change
+the human saw, and `apply` refuses if the proposal changed since. `--by` is a typed name -
+a classroom simplification; production uses an authenticated, authorised identity.
 
 ## Run it (live)
 
 ```bash
 # aira-ops from Day 3 must be running (port 8150), with per-caller tokens:
-python3 pipeline.py tokens --account ACC-1001      # prints two export lines: read token, apply token
+python3 pipeline.py tokens --account ACC-1001      # prints the read and the apply token, once
+
+# SHELL 1 - agents (read token only). Use starter/pipeline.py to run YOUR code.
+export AIRA_OPS_READ_TOKEN=...
 python3 pipeline.py run --account ACC-1001 --question "Ingest backlog on T-1001: slides queued since 06:00, pathologists blocked."
 python3 pipeline.py show RUN_ID
 python3 pipeline.py approve RUN_ID --by "Your Name" --reason "why"      # or reject
-python3 pipeline.py apply RUN_ID
-python3 pipeline.py resume RUN_ID          # after a failed stage: finished stages are not re-run or re-paid
+python3 pipeline.py resume RUN_ID          # after a failed stage: finished stages are not re-run or re-paid; never writes
+
+# SHELL 2 - the write (starts no agent)
+AIRA_OPS_APPLY_TOKEN=... python3 pipeline.py apply RUN_ID
+
 python3 ../common/trace_view.py --latest lab5-1-RUN_ID
 python3 graph_langgraph.py --print-graph    # the same flow as a LangGraph StateGraph with interrupt()
+python3 graph_langgraph.py --account ACC-1001 --question "..." --db graph.sqlite   # durable: stops at the gate
+python3 graph_langgraph.py --db graph.sqlite --thread T --decide approve --by NAME --reason "..."   # any later process
 ```
+
+`graph_langgraph.py` without `--db` uses `InMemorySaver`: pause and resume must happen in
+one process. With `--db` (`SqliteSaver`) a new process resumes at the gate, and a crashed
+apply re-runs with the same operation id (`test_graph` restarts it three times). Its write
+token is read from a file inside `apply()` only, never from the environment.
 
 What happened when we ran it (25 Sep 2026, ACC-1001):
 

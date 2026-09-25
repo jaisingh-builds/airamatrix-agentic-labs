@@ -41,6 +41,13 @@ d = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # the test's t
 open(os.path.join(d, "argv.json"), "w").write(json.dumps(sys.argv[1:]))
 open(os.path.join(d, "stdin.txt"), "w").write(sys.stdin.read())
 open(os.path.join(d, "env.json"), "w").write(json.dumps(dict(os.environ)))
+seen = {}
+for root, _, files in os.walk(os.getcwd()):
+    for f in files:
+        fp = os.path.join(root, f)
+        try: seen[os.path.relpath(fp)] = open(fp, encoding="utf-8").read()
+        except Exception: seen[os.path.relpath(fp)] = None
+open(os.path.join(d, "workspace.json"), "w").write(json.dumps({"cwd": os.getcwd(), "files": seen}))
 r = json.load(open(os.path.join(d, "reply.json")))
 print(json.dumps(r)); sys.exit(r.pop("_exit", 0))
 '''
@@ -105,7 +112,7 @@ class ReviewTests(unittest.TestCase):
         argv = json.loads((self.tmp / "argv.json").read_text())
         opt = {argv[i]: argv[i + 1] for i in range(len(argv) - 1) if argv[i].startswith("--")}
         self.assertIn("-p", argv)
-        self.assertEqual(opt["--tools"], "Read,Grep,Glob")
+        self.assertEqual(opt["--tools"], "")                        # no tools: it sees only what we send
         self.assertEqual(opt["--permission-mode"], "dontAsk")
         self.assertEqual(opt["--setting-sources"], "")
         self.assertIn("--strict-mcp-config", argv)
@@ -140,6 +147,31 @@ class ReviewTests(unittest.TestCase):
         code, rj = self.run_review([])
         self.assertEqual(code, 1); self.assertIn("too large", rj["error"])
         self.assertFalse((self.tmp / "stdin.txt").exists(), "the model was called anyway")
+
+    def test_the_model_sees_only_a_sanitised_copy_and_has_no_tools(self):
+        repo = self.tmp / "repo"; repo.mkdir()
+        run = lambda *a: subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True,
+                                        env=dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                                                 GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t"))
+        run("init", "-q", "-b", "main"); (repo / "app.py").write_text("x = 1\n"); run("add", "-A"); run("commit", "-qm", "base")
+        run("switch", "-qc", "feat")
+        (repo / "workshop_env.py").write_text('AIRA_OPS_APPLY_TOKEN = "apply-3f9c2a7e61b84d05a9e27c"\n')
+        fake_key = "sk-" + "live-should-never-be-read-0000"     # built at runtime: the repo's commit hook scans for literals
+        (repo / ".env").write_text(f"ANTHROPIC_AUTH_TOKEN={fake_key}\n")
+        run("add", "-f", "-A"); run("commit", "-qm", "feat")
+        (self.tmp / "reply.json").write_text(json.dumps(reply([])))
+        p = subprocess.run([sys.executable, str(TARGET / "review.py"), "--repo", str(repo), "--base", "main",
+                            "--head", "feat", "--out", str(self.tmp / "out")], env=self.env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 2, p.stderr)                     # the committed token is a blocker
+        ws = json.loads((self.tmp / "workspace.json").read_text())
+        self.assertNotEqual(os.path.realpath(ws["cwd"]), os.path.realpath(repo), "the model ran in the raw checkout")
+        self.assertEqual(ws["files"], {}, "the model's working directory is not empty")
+        sent = (self.tmp / "stdin.txt").read_text()
+        self.assertIn('<file path="workshop_env.py">', sent)                 # context comes from the sanitised copy
+        self.assertIn('AIRA_OPS_APPLY_TOKEN = "[REDACTED]"', sent)
+        for secret in ("apply-3f9c2a7e61b84d05a9e27c", fake_key):
+            self.assertNotIn(secret, sent)
+        self.assertFalse(os.path.exists(ws["cwd"]), "the temporary directory was not cleaned up")
 
     def test_starter_differs_from_the_reference_only_inside_the_todo_blocks(self):
         import re

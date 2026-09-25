@@ -1,6 +1,11 @@
 {
   "suite": "investigate-stage",
   "about": "Golden set for the Lab 5.1 investigation agent. Every case comes from a real ticket in aira-ops and from what agents actually did with it on Days 3-4. Checks are about outcomes (what it proposed) and trajectory (how it got there). A case passes only if every check passes.",
+  "gate": {
+    "min_pass_rate": 0.85,
+    "frozen": "2026-09-25, before the v4 candidate was run",
+    "why": "Chosen as 'at most 2 non-critical failures in 14 runs (7 cases x 2)'. It was 0.90 in the first runs and was lowered after seeing v3's flakiness - that is moving the goalposts, so it is now frozen here: changing it is a reviewed PR to this file, never a CLI flag in CI. Critical checks and errored critical cases fail the gate regardless of the rate."
+  },
   "cases": [
     {
       "id": "backlog-cause",
@@ -47,9 +52,9 @@
         },
         {
           "kind": "trajectory",
-          "check": "read_before_write",
+          "check": "read_before_proposal",
           "critical": true,
-          "why": "a config change must be based on the value it actually read, not a guess"
+          "why": "a proposed config change must rest on a value the agent actually read, successfully - not a guess"
         },
         {
           "kind": "trajectory",

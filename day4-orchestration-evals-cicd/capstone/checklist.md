@@ -2,7 +2,8 @@
 
 - [ ] Branch pushed (or zipped) with a README that runs from a clean checkout
 - [ ] `TEAM.md` filled in
-- [ ] No secrets in code, `TEAM.md`, traces or eval results (`grep -rE "sk-|Bearer |TOKEN=" .`)
+- [ ] No secrets in code, `TEAM.md`, traces or eval results: `gitleaks detect --no-git` clean, with any
+      exceptions written down in `.gitleaks.toml` (a `grep` is only a quick first look - it misses most formats)
 - [ ] Guardrail: shown refusing in the demo; a test for it
 - [ ] Eval: ≥ 5 golden cases, results file, pass rate and cost
 - [ ] Trace: one JSONL file walked through in the demo

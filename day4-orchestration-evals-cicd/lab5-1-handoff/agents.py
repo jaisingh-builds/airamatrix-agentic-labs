@@ -15,7 +15,7 @@ A Runner turns (system, prompt, schema, tools) into a validated dict. SdkRunner
 uses the Claude Agent SDK - the same harness that runs Claude Code. Tests use a
 fake runner, so every control is checked without a model.
 """
-import asyncio, json, os, sys
+import asyncio, json, os, re, sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -57,6 +57,7 @@ class AgentResult:
     cost_usd: float = 0.0
     tool_calls: list = field(default_factory=list)   # [(name, input)]
     turns: int = 0
+    tool_ok: list = field(default_factory=list)      # per call: True / False (tool returned an error) / None
 
 def _cli_stderr(line):
     # The CLI names its session with a background model call; through a gateway alias it logs
@@ -78,14 +79,36 @@ def gateway_env():
     return {"ANTHROPIC_BASE_URL": c.base_url, "ANTHROPIC_AUTH_TOKEN": c.api_key,
             "ANTHROPIC_MODEL": c.model, "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"}, c.model
 
+# Credentials that must never be in the process that starts an agent. The SDK builds the
+# Claude Code subprocess environment as {**os.environ, **options.env}: options.env ADDS,
+# it cannot remove. So the only way to keep a token from the agent is to not have it here.
+FORBIDDEN_ENV = ("AIRA_OPS_APPLY_TOKEN", "AIRA_OPS_TOKEN")
+SECRET_NAME = re.compile(r"(token|secret|passw(or)?d|credential|api_?key|private_?key|auth|_key$)", re.I)
+AGENT_MAY_INHERIT = {"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"}    # the gateway key the agent needs
+
+def scrub_agent_environment():
+    """Call first in any process that starts agents: drop every secret-named variable except the
+    gateway key. Allowlist, not denylist - CI adds tokens you didn't think of (GITHUB_TOKEN, ...)."""
+    gone = [k for k in list(os.environ) if SECRET_NAME.search(k) and k not in AGENT_MAY_INHERIT]
+    for k in gone:
+        os.environ.pop(k, None)
+    return gone
+
 class SdkRunner:
     """Runs a stage with the Claude Agent SDK (pip install claude-agent-sdk)."""
 
-    def __init__(self, ops_url, read_token, max_turns=14, max_budget_usd=0.40):
+    def __init__(self, ops_url, read_token, max_turns=14, max_budget_usd=0.40, cli_path=None):
         self.ops_url, self.read_token = ops_url, read_token
         self.max_turns, self.max_budget_usd = max_turns, max_budget_usd
+        # tests point this at a stub that records the environment the agent would get
+        self.cli_path = cli_path or os.environ.get("LAB_CLAUDE_CLI") or None
 
     def run(self, stage, system, prompt, schema):
+        held = [k for k in FORBIDDEN_ENV if os.environ.get(k)]
+        if held:   # fail closed: the agent's subprocess would inherit these
+            raise RunnerError(f"refusing to start the {stage} agent: {', '.join(held)} is set in this process "
+                              "and the SDK passes the whole environment to the agent. Run agents and apply as "
+                              "separate commands (pipeline.py run / apply).")
         return asyncio.run(self._run(stage, system, prompt, schema))
 
     def options(self, stage, system, schema, env=None, model="claude-sonnet"):
@@ -104,20 +127,27 @@ class SdkRunner:
             permission_mode="dontAsk",  # anything not allowed above is denied, not prompted
             max_turns=self.max_turns, max_budget_usd=self.max_budget_usd, model=model,
             output_format={"type": "json_schema", "schema": schema},
-            env=env or {}, cwd=str(HERE), stderr=_cli_stderr)
+            env=env or {}, cwd=str(HERE), stderr=_cli_stderr, cli_path=self.cli_path)
 
     async def _run(self, stage, system, prompt, schema):
-        from claude_agent_sdk import query, AssistantMessage, ResultMessage
+        from claude_agent_sdk import query, AssistantMessage, ResultMessage, UserMessage
         from claude_agent_sdk import ProcessError
         env, model = gateway_env()
         opts = self.options(stage, system, schema, env, model)
-        calls, result = [], None
+        calls, ok, index, result = [], [], {}, None
         try:
             async for m in query(prompt=prompt, options=opts):
                 if isinstance(m, AssistantMessage):
                     for b in m.content:
                         if getattr(b, "name", None) and b.name != "StructuredOutput":
+                            index[getattr(b, "id", None)] = len(calls)
                             calls.append((b.name.replace("mcp__aira-ops__", ""), getattr(b, "input", {})))
+                            ok.append(None)
+                elif isinstance(m, UserMessage) and isinstance(m.content, list):
+                    for b in m.content:                      # tool results come back as user turns
+                        i = index.get(getattr(b, "tool_use_id", None))
+                        if i is not None:
+                            ok[i] = not bool(getattr(b, "is_error", False))
                 elif isinstance(m, ResultMessage):
                     result = m
         except ProcessError as e:           # the CLI ended the run with an error result
@@ -132,7 +162,7 @@ class SdkRunner:
             raise RunnerError(f"{stage}: {result.subtype} after {result.num_turns} turns "
                               f"(terminal_reason={getattr(result, 'terminal_reason', None)})",
                               result.total_cost_usd or 0.0, result.num_turns)
-        return AgentResult(result.structured_output, result.total_cost_usd or 0.0, calls, result.num_turns)
+        return AgentResult(result.structured_output, result.total_cost_usd or 0.0, calls, result.num_turns, ok)
 
 def investigate_prompt(account_id, question):
     return (f"Account: {account_id}\nReported problem: {question}\n\n"

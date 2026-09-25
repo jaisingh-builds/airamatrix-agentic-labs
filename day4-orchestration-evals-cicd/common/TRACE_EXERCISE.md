@@ -29,8 +29,16 @@ Answer from the trace only:
 
 ## What goes in a trace — and what never does
 
+`spans.py` applies these in order at the sink: **allowlist** (attribute names not in
+`ALLOWED_ATTRS` become `"[dropped]"`; free text in tool arguments becomes
+`"[text: N chars]"`), then **redact** (by name, shape and value), then **cut**. Error
+messages are redacted before they are cut. Truncation is not redaction: a name in the
+first 600 characters survives a cut.
+
 | Record | Never record | Keep for |
 |---|---|---|
-| ids (run, ticket, op), stage names, tool names and argument *shapes* | tokens, keys, `Authorization` headers — masked at the sink by name, by shape and by value | 14 days in CI artefacts; delete with the run |
-| status, error class + message, attempt, duration, turns | full ticket bodies and patient/customer data (cut to 600 chars; prefer ids) | incidents: until the post-mortem closes |
-| cost, token counts, model | prompts with PII; the model's full output if it can contain PII | evals: results JSON, not raw transcripts |
+| allowlisted ids (run, ticket, op), stage, tool, status, attempt, duration, turns, cost | tokens, keys, `Authorization` headers; any attribute not on the allowlist | 14 days in CI artefacts; delete with the run |
+| error class + message, redacted then cut | ticket bodies, patient/customer text, free-text search terms | incidents: until the post-mortem closes |
+| decision, approver id, override | the free-text reason; prompts or model output that can carry PII | eval results: secrets masked on save; handle like logs |
+
+The fixture trace predates the allowlist, which is why it still shows raw tool arguments.

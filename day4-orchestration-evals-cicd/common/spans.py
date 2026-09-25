@@ -10,7 +10,10 @@ Tracing spans for agent runs - one JSON line per span, standard library only.
 A span is a named, timed unit of work with a parent. Nested spans form a tree:
 run -> stage -> model turn / tool call / HTTP write. `trace_view.py` prints it.
 
-What goes in, and what never does:
+What goes in, and what never does (in this order):
+  * ALLOWLIST first: only attribute names in ALLOWED_ATTRS are written; anything else is
+    written as "[dropped]". Tool arguments keep identifier-like values (T-1001, a config
+    key) and replace free text with its length. Default to ids, not content.
   * attributes are REDACTED at write time: bearer tokens, sk- keys, 32+ hex
     secrets and the value of any environment variable whose name says it is a
     secret. Redaction at the sink is the only place it can't be forgotten.
@@ -29,6 +32,24 @@ _PATTERNS = [
     (re.compile(r"sk-[A-Za-z0-9_\-]{8,}"), "sk-[REDACTED]"),
     (re.compile(r"\b[0-9a-f]{32,}\b"), "[REDACTED-HEX]"),
 ]
+
+ALLOWED_ATTRS = {"account", "action", "approver", "attempt", "base", "case", "cost_usd", "decision", "denials",
+                 "diff_bytes", "dropped", "exit_code", "files", "head", "http_status", "input", "kept", "ok",
+                 "op_id", "override", "reason", "replayed", "stage", "tool", "tool_calls", "turns", "verdict"}
+_ID_LIKE = re.compile(r"^[A-Za-z0-9._:/-]{1,64}$")
+
+def minimise(attrs, allowed=ALLOWED_ATTRS):
+    """Keep allowlisted names; inside tool input keep identifiers, drop free text (keep its length)."""
+    out = {}
+    for k, v in attrs.items():
+        if k not in allowed:
+            out[k] = "[dropped]"
+        elif k == "input" and isinstance(v, dict):
+            out[k] = {ik: (iv if not isinstance(iv, str) or _ID_LIKE.match(iv) else f"[text: {len(iv)} chars]")
+                      for ik, iv in v.items()}
+        else:
+            out[k] = v
+    return out
 
 def _secret_values():
     return [v for k, v in os.environ.items() if _SECRET_NAMES.search(k) and len(v) >= 8]
@@ -61,11 +82,13 @@ class Span:
         self.attrs.update(attrs)
 
     def fail(self, error):
-        self.status, self.error = "error", str(error)[:300]
+        # redact FIRST, then cut: truncation is not redaction (a secret in the first 300 chars survives it)
+        self.status, self.error = "error", redact(str(error), limit=300)
 
 class Tracer:
-    def __init__(self, name, trace_id=None, root=None):
+    def __init__(self, name, trace_id=None, root=None, allowed=ALLOWED_ATTRS):
         self.trace_id = trace_id or uuid.uuid4().hex[:12]
+        self.allowed = allowed
         root = Path(root or os.environ.get("LAB_TRACE_DIR") or Path(__file__).resolve().parents[2] / "traces")
         root.mkdir(parents=True, exist_ok=True)
         self.path = root / f"{name}-{self.trace_id}.jsonl"
@@ -93,6 +116,6 @@ class Tracer:
     def _write(self, s):
         rec = {"trace_id": self.trace_id, "span_id": s.span_id, "parent_id": s.parent_id,
                "name": s.name, "start": round(s.start, 3), "duration_ms": round((time.time() - s.start) * 1000),
-               "status": s.status, "error": s.error, "attrs": redact(s.attrs)}
+               "status": s.status, "error": s.error, "attrs": redact(minimise(s.attrs, self.allowed))}
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec, default=str) + "\n")

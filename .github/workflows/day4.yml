@@ -1,21 +1,28 @@
-# Day 4 - agentic CI/CD. Four jobs, each with the least it needs:
+# Day 4 - agentic CI/CD. Each job gets the least it needs.
 #
-#   offline-tests  every control, no model, no secrets              (fast, always)
-#   evals          golden set against the real agent; gates on it   (gateway secret, read-only repo)
-#   pr-review      headless Claude Code reviews the diff            (gateway secret, read-only repo)
-#   comment        posts review.md on the PR                        (write token, never runs PR code)
+#   changes        always runs: did this PR touch Day 4? (no `paths:` filter - see below)
+#   offline-tests  every control, no model, no secrets
+#   evals          golden set against the PR's agent code; gates on it       (gateway key)
+#   pr-review      the BASE branch's reviewer reads the PR as data             (gateway key)
+#   comment        posts review.md                                            (the only write token)
+#   gate           always runs; the ONE required check on the protected branch
 #
-# Make offline-tests, evals and pr-review REQUIRED checks on the protected branch;
-# that is what turns an exit code into "cannot merge".
+# Trust boundary, stated precisely:
+#   * Fork PRs get no secrets and a read-only GITHUB_TOKEN. evals/pr-review do not run for them;
+#     `gate` fails until a maintainer runs them on a trusted branch.
+#   * Same-repository PRs DO get the secrets below. `evals` deliberately runs the PR's agent code
+#     with the gateway key - that code is what is being tested. So that key must be a model-only,
+#     budget-capped key (never a cloud, repo-write or production credential), and the job sits
+#     behind the `model-evals` environment, where you can require a reviewer before it runs.
+#   * `pr-review` runs review.py from the BASE branch; the PR's own copy of the reviewer never runs.
 name: day4
 
 on:
-  pull_request:                 # NOT pull_request_target: PR code never runs with the base repo's secrets
-    paths: ["day4-orchestration-evals-cicd/**", ".github/workflows/day4.yml"]
+  pull_request:          # not pull_request_target: a fork's code never runs with this repo's secrets
   workflow_dispatch:
 
 permissions:
-  contents: read                # default for every job; widened only where a job needs it
+  contents: read
 
 concurrency:
   group: day4-${{ github.event.pull_request.number || github.ref }}
@@ -23,62 +30,76 @@ concurrency:
 
 env:
   D4: day4-orchestration-evals-cicd
-  FORK: ${{ github.event.pull_request.head.repo.fork == true }}
+  SAME_REPO: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
 jobs:
+  changes:
+    # A required check that a `paths:` filter skips stays "Expected - waiting" and blocks every
+    # unrelated PR. So the workflow always runs; this job decides what else is needed.
+    runs-on: ubuntu-latest
+    outputs:
+      day4: ${{ steps.diff.outputs.day4 }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - id: diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then echo "day4=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if git diff --name-only "origin/$BASE_REF...HEAD" | grep -qE "^($D4/|\.github/workflows/day4\.yml)"; then
+            echo "day4=true" >> "$GITHUB_OUTPUT"; else echo "day4=false" >> "$GITHUB_OUTPUT"; fi
+
   offline-tests:
+    needs: changes
+    if: needs.changes.outputs.day4 == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with: { persist-credentials: false }     # no git token left on disk for anything to read
+        with: { persist-credentials: false }     # no git token left on disk
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -r "$D4/requirements.txt"
       - run: make day4-test
 
   evals:
-    needs: offline-tests
+    needs: [changes, offline-tests]
+    if: needs.changes.outputs.day4 == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    environment: model-evals     # Settings > Environments: add required reviewers to gate this job
     env:
       ANTHROPIC_BASE_URL: ${{ secrets.LAB_GATEWAY_URL }}
-      ANTHROPIC_AUTH_TOKEN: ${{ secrets.LAB_GATEWAY_KEY }}
-      EVAL_MIN_PASS: "0.85"
-      EVAL_BUDGET_USD: "2.00"
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.LAB_GATEWAY_KEY }}   # model-only, budget-capped key
+      EVAL_BUDGET_USD: "2.50"    # the pass threshold is NOT set here: it is frozen in golden/cases.json
     steps:
       - name: Gateway secret present?
         run: |
-          if [ -n "$ANTHROPIC_AUTH_TOKEN" ]; then exit 0; fi
-          if [ "$FORK" = "true" ]; then echo "::notice::fork PR - no secrets; a maintainer runs evals"; exit 0; fi
+          [ -n "$ANTHROPIC_AUTH_TOKEN" ] && exit 0
           echo "::error::LAB_GATEWAY_KEY is not set - evals cannot run, so this check fails (fail closed)"; exit 1
       - uses: actions/checkout@v4
-        if: env.ANTHROPIC_AUTH_TOKEN != ''
         with: { persist-credentials: false }
       - uses: actions/setup-python@v5
-        if: env.ANTHROPIC_AUTH_TOKEN != ''
         with: { python-version: "3.12" }
       - uses: actions/setup-node@v4              # the aira-ops MCP server is TypeScript run by node
-        if: env.ANTHROPIC_AUTH_TOKEN != ''
         with: { node-version: "24" }
-      - if: env.ANTHROPIC_AUTH_TOKEN != ''
-        run: pip install -r "$D4/requirements.txt"
+      - run: pip install -r "$D4/requirements.txt"
       - name: Golden set (exit 0 pass, 1 gate failed, 2 could not run)
-        if: env.ANTHROPIC_AUTH_TOKEN != ''
         working-directory: ${{ env.D4 }}/lab5-2-evals
         run: python3 run_evals.py            # writes the table to the job summary
       - uses: actions/upload-artifact@v4
-        if: always() && env.ANTHROPIC_AUTH_TOKEN != ''
+        if: always()
         with:
           name: eval-results
           path: |
             ${{ env.D4 }}/lab5-2-evals/results/
             traces/lab5-2-*.jsonl
-          retention-days: 14                 # traces hold ticket text: keep them short-lived
+          retention-days: 14                 # traces and results hold ticket text: keep them short-lived
 
   pr-review:
-    needs: offline-tests
-    if: github.event_name == 'pull_request'
+    needs: [changes, offline-tests]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.day4 == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -88,37 +109,42 @@ jobs:
     steps:
       - name: Gateway secret present?
         run: |
-          if [ -n "$ANTHROPIC_AUTH_TOKEN" ]; then exit 0; fi
-          if [ "$FORK" = "true" ]; then echo "::notice::fork PR - no secrets; review not run"; exit 0; fi
+          [ -n "$ANTHROPIC_AUTH_TOKEN" ] && exit 0
           echo "::error::LAB_GATEWAY_KEY is not set - the review cannot run, so this check fails (fail closed)"; exit 1
-      - uses: actions/checkout@v4
-        if: env.ANTHROPIC_AUTH_TOKEN != ''
-        with: { fetch-depth: 0, persist-credentials: false }
+      - name: The reviewer comes from the base branch (trusted)
+        uses: actions/checkout@v4
+        with: { ref: "${{ github.base_ref }}", path: trusted, persist-credentials: false }
+      - name: The PR is data
+        uses: actions/checkout@v4
+        with: { path: pr, fetch-depth: 0, persist-credentials: false }
       - uses: actions/setup-python@v5
-        if: env.ANTHROPIC_AUTH_TOKEN != ''
         with: { python-version: "3.12" }
       - uses: actions/setup-node@v4
-        if: env.ANTHROPIC_AUTH_TOKEN != ''
         with: { node-version: "24" }
       - name: Install Claude Code (pinned)
-        if: env.ANTHROPIC_AUTH_TOKEN != ''
         run: npm install -g @anthropic-ai/claude-code@2.1.282
-      - name: Review the diff (exit 0 ok, 2 blocking findings, 1 could not review)
-        if: env.ANTHROPIC_AUTH_TOKEN != ''
+      - name: Review (exit 0 ok, 2 blocking findings, 1 could not review)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          mkdir -p review-out; echo "$PR_NUMBER" > review-out/pr-number
+          REVIEWER="trusted/$D4/lab5-3-pr-review/review.py"
+          if [ ! -f "$REVIEWER" ]; then
+            echo "::notice::the base branch has no reviewer yet (bootstrap PR) - not reviewed"; exit 0
+          fi
           set +e
-          python3 "$D4/lab5-3-pr-review/review.py" --repo . --base "origin/${{ github.base_ref }}" --head HEAD --out review-out
+          python3 "$REVIEWER" --repo pr --base "origin/$BASE_REF" --head HEAD --out review-out
           code=$?
-          echo "${{ github.event.pull_request.number }}" > review-out/pr-number
           echo "$code" > review-out/exit-code
           exit $code
       - uses: actions/upload-artifact@v4
-        if: always() && env.ANTHROPIC_AUTH_TOKEN != ''
+        if: always()
         with: { name: pr-review, path: review-out/, retention-days: 14 }
 
   comment:
     needs: pr-review
-    if: always() && github.event_name == 'pull_request' && needs.pr-review.result != 'skipped' && github.event.pull_request.head.repo.fork == false
+    if: always() && needs.pr-review.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -131,4 +157,29 @@ jobs:
         if: hashFiles('review-out/review.md') != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body-file review-out/review.md
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR_NUMBER" --repo "${{ github.repository }}" --body-file review-out/review.md
+
+  gate:
+    # The ONLY required status check. It always reports, so unrelated PRs are never left pending,
+    # and it fails if a job that had to run did not succeed - including evals skipped for a fork.
+    needs: [changes, offline-tests, evals, pr-review]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          DAY4: ${{ needs.changes.outputs.day4 }}
+          CHANGES: ${{ needs.changes.result }}
+          TESTS: ${{ needs.offline-tests.result }}
+          EVALS: ${{ needs.evals.result }}
+          REVIEW: ${{ needs.pr-review.result }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "changes=$CHANGES day4=$DAY4 tests=$TESTS evals=$EVALS review=$REVIEW"
+          [ "$CHANGES" = "success" ] || { echo "::error::could not determine what changed"; exit 1; }
+          [ "$DAY4" = "true" ] || { echo "no Day 4 changes - nothing to gate"; exit 0; }
+          [ "$TESTS" = "success" ] || { echo "::error::offline tests: $TESTS"; exit 1; }
+          [ "$EVALS" = "success" ] || { echo "::error::evals: $EVALS (fork PRs: a maintainer runs them on a trusted branch)"; exit 1; }
+          if [ "$EVENT" = "pull_request" ]; then
+            [ "$REVIEW" = "success" ] || { echo "::error::pr-review: $REVIEW"; exit 1; }
+          fi

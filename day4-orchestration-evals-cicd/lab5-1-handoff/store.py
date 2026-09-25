@@ -9,7 +9,7 @@ decision is a row too, with a name and a reason).
 
 SQLite, standard library. The same shape works on Postgres or DynamoDB.
 """
-import json, sqlite3, threading, uuid
+import hashlib, json, sqlite3, threading, uuid
 from datetime import datetime, timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -23,7 +23,7 @@ create table if not exists stages(run_id text, name text, status text, attempt i
     output text, error text, cost_usd real, tool_calls integer, started_at text, finished_at text,
     primary key(run_id, name));
 create table if not exists approvals(run_id text primary key, decision text, approver text,
-    reason text, override integer, at text);
+    reason text, override integer, at text, proposal_sha text);
 create table if not exists operations(run_id text primary key, op_id text, action text,
     payload text, status text, response text, created_at text, updated_at text);
 """
@@ -39,6 +39,9 @@ class Store:
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        cols = {r[1] for r in self.db.execute("pragma table_info(approvals)")}
+        if "proposal_sha" not in cols:            # a runs.sqlite from before this column existed
+            self.db.execute("alter table approvals add column proposal_sha text")
         self.lock = threading.Lock()
 
     # ---- runs
@@ -99,10 +102,18 @@ class Store:
         r = self.db.execute("select * from approvals where run_id=?", (rid,)).fetchone()
         return dict(r) if r else None
 
+    def proposal_sha(self, rid):
+        """Fingerprint of the exact change a human is deciding on."""
+        st = self.stage(rid, "investigate")
+        change = (st or {}).get("output", {}) and st["output"].get("proposed_change")
+        return hashlib.sha256(json.dumps(change, sort_keys=True).encode()).hexdigest()
+
     def record_decision(self, rid, decision, approver, reason, override=False):
+        # The decision is bound to the proposal as it was when the human saw it.
         with self.lock:
-            self.db.execute("insert into approvals values(?,?,?,?,?,?)",
-                            (rid, decision, approver, reason, int(override), now()))
+            self.db.execute("insert into approvals(run_id, decision, approver, reason, override, at, proposal_sha) "
+                            "values(?,?,?,?,?,?,?)",
+                            (rid, decision, approver, reason, int(override), now(), self.proposal_sha(rid)))
             self.db.commit()
 
     # ---- the write: its operation id is stored BEFORE it is sent

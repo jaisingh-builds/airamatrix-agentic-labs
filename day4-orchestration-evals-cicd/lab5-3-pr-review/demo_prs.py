@@ -101,6 +101,8 @@ def main():
     wt = Path(a.worktree)
     if not wt.exists():
         raise SystemExit(f"{wt} is not a worktree: git worktree add {wt} {a.base}")
+    if git(wt, "status", "--porcelain").strip():
+        raise SystemExit(f"{wt} has uncommitted changes - commit or stash them first")
     for branch, make in DEMOS.items():
         git(wt, "switch", "-q", "-C", branch, a.base)
         msg = make(wt)

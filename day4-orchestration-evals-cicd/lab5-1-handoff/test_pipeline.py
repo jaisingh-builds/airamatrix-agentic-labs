@@ -166,7 +166,7 @@ class PipelineTests(unittest.TestCase):
             self.new_run(runner)
         rid = self.store.runs()[0]["id"]
         self.assertEqual(self.store.run(rid)["status"], "review_failed")
-        pipeline.resume(self.store, runner, rid, self.write_tok)
+        pipeline.resume(self.store, runner, rid)
         self.assertEqual(runner.calls, ["investigate", "review", "review"], "investigate was paid for twice")
         self.assertEqual(self.store.run(rid)["status"], "awaiting_approval")
         self.assertAlmostEqual(self.store.cost(rid), 0.03 + 0.11 + 0.03, places=4, msg= "the failed attempt was paid for - it must show in the cost")
@@ -215,6 +215,56 @@ class PipelineTests(unittest.TestCase):
         ref, st = (HERE / "pipeline.py").read_text(), (HERE / "starter" / "pipeline.py").read_text()
         self.assertEqual(strip(st), strip(ref))
         self.assertEqual(st.count("raise NotImplementedError"), 4)
+
+    def test_an_approval_is_bound_to_the_exact_proposal(self):
+        rid = self.new_run(FakeRunner(investigate=[GOOD], review=[APPROVE]))
+        pipeline.decide(self.store, rid, "approve", "Jai", "test")
+        changed = json.loads(json.dumps(GOOD)); changed["proposed_change"]["value"] = 16
+        self.store.db.execute("update stages set output=? where run_id=? and name='investigate'", (json.dumps(changed), rid))
+        self.store.db.commit()
+        with self.assertRaisesRegex(pipeline.GateError, "changed after it was decided"):
+            pipeline.apply(self.store, rid, self.write_tok, self.url)
+
+    def test_resume_never_writes(self):
+        rid = self.new_run(FakeRunner(investigate=[GOOD], review=[APPROVE]))
+        pipeline.decide(self.store, rid, "approve", "Jai", "test")
+        pipeline.resume(self.store, FakeRunner(), rid)
+        self.assertEqual(self.store.run(rid)["status"], "approved")
+        self.assertIsNone(self.store.operation(rid))
+
+    def test_an_agent_will_not_start_while_the_write_token_is_in_the_environment(self):
+        os.environ["AIRA_OPS_APPLY_TOKEN"] = "apply-secret-for-test"
+        try:
+            with self.assertRaisesRegex(agents.RunnerError, "refusing to start"):
+                agents.SdkRunner(self.url, "tok").run("investigate", "sys", "p", {"type": "object"})
+        finally:
+            del os.environ["AIRA_OPS_APPLY_TOKEN"]
+
+    def test_the_agent_subprocess_environment_holds_no_write_or_admin_token(self):
+        try:
+            import claude_agent_sdk  # noqa: F401
+        except ImportError:
+            self.skipTest("claude-agent-sdk not installed")
+        d = Path(self.tmp.name) / "stubcli"; d.mkdir(exist_ok=True)
+        stub = d / "claude"
+        stub.write_text("#!" + sys.executable + "\nimport json, os, sys\n"
+                        "json.dump({'env': dict(os.environ), 'argv': sys.argv},"
+                        " open(os.path.join(os.path.dirname(__file__), 'seen.json'), 'w'))\nsys.exit(1)\n")
+        stub.chmod(0o755)
+        env = dict(os.environ, LAB_CLAUDE_CLI=str(stub), CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK="1",
+                   AIRA_OPS_URL=self.url, PIPELINE_DB=str(Path(self.tmp.name) / "cli.sqlite"),
+                   AIRA_OPS_READ_TOKEN=self.read_tok, AIRA_OPS_APPLY_TOKEN=self.write_tok, AIRA_OPS_TOKEN=self.admin,
+                   ANTHROPIC_BASE_URL="https://gateway.example", ANTHROPIC_AUTH_TOKEN="gw-key-for-test")
+        p = subprocess.run([sys.executable, str(HERE / "pipeline.py"), "run", "--account", "ACC-1001", "--question", "q"],
+                           env=env, capture_output=True, text=True, timeout=60)
+        self.assertIn("stage failed", p.stderr + p.stdout)          # the stub ends the run - that's fine
+        seen = json.loads((d / "seen.json").read_text())
+        blob = json.dumps(seen)
+        self.assertFalse(self.write_tok in blob, "the apply token reached the agent's subprocess")
+        self.assertFalse(self.admin in blob, "the admin token reached the agent's subprocess")
+        secret_named = {k for k in seen["env"] if agents.SECRET_NAME.search(k)}
+        self.assertEqual(secret_named - agents.AGENT_MAY_INHERIT, set(), "secret-named variables reached the agent")
+        self.assertEqual(seen["env"]["ANTHROPIC_AUTH_TOKEN"], "gw-key-for-test")
 
     def test_sdk_stage_options_are_least_privilege(self):
         try:

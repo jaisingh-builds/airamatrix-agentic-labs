@@ -114,11 +114,11 @@
         "detail": "risks mentions /memory/"
        },
        {
-        "check": "read_before_write",
+        "check": "read_before_proposal",
         "kind": "trajectory",
         "critical": true,
         "passed": true,
-        "detail": "get_config(ingest.max_concurrent_jobs) read first"
+        "detail": "get_config(ingest.max_concurrent_jobs) called; result not recorded (older run)"
        },
        {
         "check": "called",

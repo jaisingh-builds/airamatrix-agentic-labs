@@ -1,0 +1,14 @@
+# gitleaks detect --no-git --config .gitleaks.toml
+# Documented exceptions: these files contain FAKE secrets on purpose, to test that scanners,
+# redaction and the PR reviewer catch them. Anything else that matches is a real finding.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Day 4 test fixtures and demo strings (fake values, by design)"
+paths = [
+  '''day4-orchestration-evals-cicd/lab5-3-pr-review/test_review\.py''',
+  '''day4-orchestration-evals-cicd/lab5-3-pr-review/demo_prs\.py''',
+  '''day4-orchestration-evals-cicd/common/test_spans\.py''',
+  '''day4-orchestration-evals-cicd/lab5-2-evals/test_graders\.py''',
+]

@@ -37,5 +37,26 @@ class RedactTests(unittest.TestCase):
                 pass
             self.assertNotIn("abcdefgh12345678", tr.path.read_text())
 
+    def test_error_messages_are_redacted_before_they_are_cut(self):
+        with tempfile.TemporaryDirectory() as d:
+            tr = Tracer("t", trace_id="err", root=d)
+            try:
+                with tr.span("call"):
+                    raise RuntimeError("upstream said: Authorization: Bearer abcdefgh12345678 " + "x" * 1000)
+            except RuntimeError:
+                pass
+            rec = json.loads(tr.path.read_text().splitlines()[-1])
+            self.assertNotIn("abcdefgh12345678", rec["error"])
+            self.assertLess(len(rec["error"]), 400)
+
+    def test_only_allowlisted_attributes_and_identifiers_are_kept(self):
+        with tempfile.TemporaryDirectory() as d:
+            tr = Tracer("t", trace_id="min", root=d)
+            tr.event("tool_call", tool="get_ticket", input={"id": "T-1001", "query": "patient Jane Doe, 54, stain HER2"},
+                     ticket_body="Patient age 54 ...")
+            attrs = json.loads(tr.path.read_text().splitlines()[-1])["attrs"]
+            self.assertEqual(attrs["input"], {"id": "T-1001", "query": "[text: 32 chars]"})
+            self.assertEqual(attrs["ticket_body"], "[dropped]")
+
 if __name__ == "__main__":
     unittest.main()

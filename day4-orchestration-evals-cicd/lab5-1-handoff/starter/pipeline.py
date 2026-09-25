@@ -58,8 +58,8 @@ def run_stage(store, runner, tracer, rid, name, system, prompt, schema, extra_ch
             store.stage_failed(rid, name, f"{type(e).__name__}: {e}", cost)
             store.set_status(rid, f"{name}_failed")
             raise
-        for tool, args in res.tool_calls:
-            tracer.event("tool_call", tool=tool, input=args)
+        for i, (tool, args) in enumerate(res.tool_calls):
+            tracer.event("tool_call", tool=tool, input=args, ok=(res.tool_ok[i] if i < len(res.tool_ok) else None))
         sp.set(cost_usd=round(res.cost_usd, 4), tool_calls=len(res.tool_calls), turns=res.turns)
         store.stage_done(rid, name, res.output, res.cost_usd, len(res.tool_calls))
         return res.output
@@ -108,6 +108,8 @@ def apply(store, rid, write_token, ops_url=OPS_URL, tracer=None):
     a = None
     raise NotImplementedError("TODO 3: no approval on record, no write")
     # <<< TODO 3
+    if a.get("proposal_sha") != store.proposal_sha(rid):
+        raise GateError(f"run {rid}: the proposal changed after it was decided - it needs a new decision")
     if r["status"] == "applied":
         return r                     # already done: applying again is a no-op, not an error
     if r["status"] not in ("approved", "outcome_unknown"):
@@ -159,16 +161,13 @@ def http(method, url, body, token, op_id):
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         return 0, {"error": {"code": "unavailable", "message": str(e)}}
 
-def resume(store, runner, rid, write_token):
-    """Pick up wherever the run stopped: unfinished stages, or an apply with an unknown outcome."""
+def resume(store, runner, rid):
+    """Finish the agent stages of a run that stopped. Never writes: an approved run, or one whose
+    write has an unknown outcome, is finished with `apply` - a separate process holding the write token."""
     r = store.run(rid)
-    if r["status"] in TERMINAL:
-        return r
     if r["status"] in ("created", "investigated", "reviewed") or r["status"].endswith("_failed") and r["status"] != "apply_failed":
         return advance(store, runner, rid)
-    if r["status"] in ("approved", "outcome_unknown"):
-        return apply(store, rid, write_token)
-    return r   # waiting at the gate: only a human moves it on
+    return r   # terminal, waiting at the gate, or waiting for `apply`
 
 # --------------------------------------------------------------- CLI
 def show(store, rid):
@@ -214,8 +213,15 @@ def main():
     if a.cmd == "tokens":
         return issue_tokens(a.account)
     store = Store(os.environ.get("PIPELINE_DB", str(HERE / "runs.sqlite")))
-    read_tok = os.environ.get("AIRA_OPS_READ_TOKEN") or os.environ.get("AIRA_OPS_TOKEN", "")
-    write_tok = os.environ.get("AIRA_OPS_APPLY_TOKEN", "")
+    # Least privilege per PROCESS: commands that start agents drop the write and admin tokens from
+    # this process's environment first (the SDK hands the whole environment to the agent's
+    # subprocess). Only `apply` - which starts no agent - keeps the write token.
+    write_tok = os.environ.pop("AIRA_OPS_APPLY_TOKEN", "") if a.cmd == "apply" else ""
+    read_tok = os.environ.get("AIRA_OPS_READ_TOKEN", "")   # handed to the MCP server explicitly
+    if a.cmd in ("run", "resume"):
+        agents.scrub_agent_environment()
+    if a.cmd in ("run", "resume") and not read_tok:
+        raise SystemExit("AIRA_OPS_READ_TOKEN is not set - agents get a read-only caller token (python3 pipeline.py tokens)")
     try:
         if a.cmd == "run":
             runner = agents.SdkRunner(OPS_URL, read_tok)
@@ -231,7 +237,9 @@ def main():
                 raise SystemExit("AIRA_OPS_APPLY_TOKEN is not set - the apply step has its own credential (python3 pipeline.py tokens)")
             apply(store, a.run, write_tok); show(store, a.run)
         elif a.cmd == "resume":
-            resume(store, agents.SdkRunner(OPS_URL, read_tok), a.run, write_tok); show(store, a.run)
+            resume(store, agents.SdkRunner(OPS_URL, read_tok), a.run); show(store, a.run)
+            if store.run(a.run)["status"] in ("approved", "outcome_unknown"):
+                print(f"next: python3 pipeline.py apply {a.run}   (in a shell that holds AIRA_OPS_APPLY_TOKEN)")
         elif a.cmd == "list":
             for r in store.runs():
                 print(f"{r['id']}  {r['account_id']}  {r['status']:<18} ${store.cost(r['id']):<7} {r['question'][:60]}")
