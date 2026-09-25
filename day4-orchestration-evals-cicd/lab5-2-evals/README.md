@@ -71,7 +71,7 @@ Deterministic checks gate the merge; the judge is for the fuzzy part, once calib
 
 ## Your tasks (starter/graders.py)
 
-1. `read_before_write` — did it read the value it wants to change?
+1. `read_before_proposal` — did it *successfully* read the value it proposes to change?
 2. `gate()` — pass rate **and** no critical failure.
 
 ```bash
