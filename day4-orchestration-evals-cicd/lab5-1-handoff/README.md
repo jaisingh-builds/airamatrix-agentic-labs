@@ -32,6 +32,23 @@ The approval is bound to the proposal: `approvals.proposal_sha` is the hash of t
 the human saw, and `apply` refuses if the proposal changed since. `--by` is a typed name -
 a classroom simplification; production uses an authenticated, authorised identity.
 
+## The gate without a model ($0, required)
+
+A live run may or may not be blocked - the reviewer decides. To practise the refusals
+every time, replay a real blocked run (36cc478fce, 25 Sep) from its saved stage outputs:
+
+```bash
+python3 starter/pipeline.py replay fixtures/blocked-36cc478fce.json   # no model, no token needed
+python3 starter/pipeline.py approve RUN_ID --by "Your Name" --reason "backlog is P1"
+#   refused: the reviewer blocked this proposal; approving it needs --override and a reason
+python3 starter/pipeline.py reject RUN_ID --by "Your Name" --reason "reviewer is right"
+AIRA_OPS_APPLY_TOKEN=x python3 starter/pipeline.py apply RUN_ID
+#   refused: run RUN_ID has no approval on record
+```
+
+Then run it live. If the reviewer blocks, repeat the two refusals on your run. If it
+approves, decide with a reason and apply from shell 2.
+
 ## Run it (live)
 
 ```bash

@@ -73,8 +73,10 @@ def run_one(case, ops, max_budget):
 def report(suite, case_results, g, total_cost, out):
     lines = [f"## Eval gate: {'PASS' if g['ok'] else 'FAIL'} — {suite}", "",
              f"{g['passed']}/{g['runs']} runs passed ({g['pass_rate']:.0%}, need {g['min_pass_rate']:.0%}) · "
-             f"{g['errors']} errors · {sum(1 for c in case_results for r in c['runs'] if 'retried_after' in r)} "
-             f"retried after an error · ${total_cost:.2f}", "",
+             f"first attempt {g['first_attempt_passed']}/{g['runs']} · {g['retried']} retried after an error · "
+             f"{g['unrecovered_errors']} unrecovered errors · ${total_cost:.2f}", "",
+             "A run = one attempt + at most one retry for an execution/schema error. An unrecovered error "
+             "or a failed critical check blocks the gate.", "",
              "| case | runs passed | failing checks |", "|---|---|---|"]
     for c in case_results:
         ok = sum(1 for r in c["runs"] if r.get("grade", {}).get("passed"))

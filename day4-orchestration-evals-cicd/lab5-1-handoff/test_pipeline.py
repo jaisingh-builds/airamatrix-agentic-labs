@@ -216,6 +216,16 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(strip(st), strip(ref))
         self.assertEqual(st.count("raise NotImplementedError"), 4)
 
+    def test_the_saved_blocked_run_replays_and_the_gate_holds(self):
+        rid = pipeline.replay(self.store, HERE / "fixtures" / "blocked-36cc478fce.json")
+        self.assertEqual(self.store.run(rid)["status"], "needs_rework")              # the reviewer's BLOCK
+        with self.assertRaisesRegex(pipeline.GateError, "override"):
+            pipeline.decide(self.store, rid, "approve", "Jai", "backlog is P1")      # no --override: refused
+        pipeline.decide(self.store, rid, "reject", "Jai", "confirm the memory fix first")
+        with self.assertRaisesRegex(pipeline.GateError, "no approval on record"):
+            pipeline.apply(self.store, rid, self.write_tok, self.url)
+        self.assertEqual(self.store.cost(rid), 0.0)
+
     def test_an_approval_is_bound_to_the_exact_proposal(self):
         rid = self.new_run(FakeRunner(investigate=[GOOD], review=[APPROVE]))
         pipeline.decide(self.store, rid, "approve", "Jai", "test")

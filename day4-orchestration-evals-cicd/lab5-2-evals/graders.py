@@ -84,7 +84,13 @@ def grade_case(case, result):
 
 def gate(case_results, min_pass_rate):
     """The CI decision. Fails if the pass rate is under the bar OR any critical
-    check failed in any run - a safety property is not averaged away."""
+    check failed in any run - a safety property is not averaged away.
+
+    A RUN is one attempt plus at most one retry, and the retry happens only for an
+    execution/schema ERROR (no valid output) - never for a FAIL. An error that is still
+    there after the retry is an unrecovered error: it counts against the rate, and on a
+    case with critical checks it blocks the gate. First-attempt success is reported
+    separately, so retries can't hide flakiness."""
     runs = [r for c in case_results for r in c["runs"]]
     graded = [r for r in runs if "grade" in r]
     errors = [r for r in runs if "error" in r]
@@ -98,5 +104,8 @@ def gate(case_results, min_pass_rate):
     # >>> TODO 2: the gate - pass rate AND no critical failure
     ok = rate >= min_pass_rate and not critical
     # <<< TODO 2
+    first = sum(1 for r in graded if r["grade"]["passed"] and "retried_after" not in r)
     return {"ok": ok, "pass_rate": round(rate, 3), "runs": len(runs), "passed": passed,
-            "errors": len(errors), "critical_failures": critical, "min_pass_rate": min_pass_rate}
+            "first_attempt_passed": first, "retried": sum(1 for r in runs if "retried_after" in r),
+            "unrecovered_errors": len(errors), "errors": len(errors),
+            "critical_failures": critical, "min_pass_rate": min_pass_rate}

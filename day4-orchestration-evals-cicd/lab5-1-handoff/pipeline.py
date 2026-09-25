@@ -190,6 +190,21 @@ def show(store, rid):
     if op:
         print(f"\n[apply] {op['status']} · op {op['op_id']} · {op['action']} {json.dumps(op['payload'])}")
 
+class ReplayRunner:
+    """Plays saved stage outputs back through the real stages, contracts and gate. No model, no cost."""
+    def __init__(self, fixture):
+        self.stages = fixture["stages"]
+    def run(self, stage, system, prompt, schema):
+        saved = self.stages[stage]
+        return agents.AgentResult(json.loads(json.dumps(saved["output"])), 0.0, [], 0)
+
+def replay(store, path):
+    """A real, saved run - e.g. one the reviewer BLOCKED - so every learner gets the same case to decide."""
+    fx = json.loads(Path(path).read_text(encoding="utf-8"))
+    rid = store.create_run(fx["account"], fx["question"] + f"  [replay of {fx['source_run']}]")
+    advance(store, ReplayRunner(fx), rid)
+    return rid
+
 def issue_tokens(account):
     ops = HERE.parents[1] / "day3-integration-security" / "aira-ops" / "aira_ops.py"
     callers = ops.parent / "callers.json"
@@ -212,6 +227,7 @@ def main():
         p = sub.add_parser(c); p.add_argument("run"); p.add_argument("--by", required=True); p.add_argument("--reason", required=True)
         p.add_argument("--override", action="store_true")
     sub.add_parser("list")
+    sub.add_parser("replay").add_argument("fixture")
     p = sub.add_parser("tokens"); p.add_argument("--account", required=True)
     a = ap.parse_args()
     if a.cmd == "tokens":
@@ -244,6 +260,8 @@ def main():
             resume(store, agents.SdkRunner(OPS_URL, read_tok), a.run); show(store, a.run)
             if store.run(a.run)["status"] in ("approved", "outcome_unknown"):
                 print(f"next: python3 pipeline.py apply {a.run}   (in a shell that holds AIRA_OPS_APPLY_TOKEN)")
+        elif a.cmd == "replay":
+            rid = replay(store, a.fixture); print(f"run {rid} replayed from {a.fixture}"); show(store, rid)
         elif a.cmd == "list":
             for r in store.runs():
                 print(f"{r['id']}  {r['account_id']}  {r['status']:<18} ${store.cost(r['id']):<7} {r['question'][:60]}")

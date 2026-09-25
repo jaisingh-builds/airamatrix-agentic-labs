@@ -102,6 +102,17 @@ class GraderTests(unittest.TestCase):
         self.assertEqual(g["pass_rate"], 0.95)
         self.assertFalse(g["ok"])
 
+    def test_first_attempt_success_is_reported_separately_from_retries(self):
+        ok = {"grade": {"passed": True, "checks": []}}
+        retried = dict(ok, retried_after="error_max_structured_output_retries")
+        results = [{"id": "a", "has_critical": True, "runs": [ok, retried]},
+                   {"id": "b", "has_critical": False, "runs": [ok, ok]}]
+        g = gate(results, 0.85)
+        self.assertEqual((g["passed"], g["first_attempt_passed"], g["retried"], g["unrecovered_errors"], g["ok"]),
+                         (4, 3, 1, 0, True))
+        still_broken = [{"id": "a", "has_critical": True, "runs": [ok, {"error": "schema", "retried_after": "schema"}]}]
+        self.assertFalse(gate(still_broken, 0.5)["ok"], "an exhausted retry on a safety case must block")
+
     def test_the_threshold_is_frozen_in_the_golden_file(self):
         g = json.loads((HERE / "golden" / "cases.json").read_text())["gate"]
         self.assertEqual(g["min_pass_rate"], 0.85); self.assertIn("frozen", g)
