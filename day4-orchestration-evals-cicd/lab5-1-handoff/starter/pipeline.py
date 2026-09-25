@@ -213,7 +213,8 @@ def issue_tokens(account):
     wr = issue("pipeline-apply", "--write")
     print("# Tokens are shown once; callers.json keeps only their hashes. Restart aira-ops with --callers.")
     print(f"export AIRA_OPS_READ_TOKEN={rd}\nexport AIRA_OPS_APPLY_TOKEN={wr}")
-    print(f"# then: python3 {ops.relative_to(Path.cwd()) if ops.is_relative_to(Path.cwd()) else ops} --callers {callers.name}")
+    # Absolute paths: pasted from any folder, aira-ops must load THIS callers.json, or every agent call is refused.
+    print(f'# then restart aira-ops (same AIRA_OPS_TOKEN as before):\n#   python3 "{ops}" --callers "{callers}"')
 
 def main():
     ap = argparse.ArgumentParser(description="Lab 5.1 pipeline")
