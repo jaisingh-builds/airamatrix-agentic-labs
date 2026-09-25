@@ -11,7 +11,15 @@ from pathlib import Path
 def load(path):
     return [json.loads(l) for l in Path(path).read_text(encoding="utf-8").splitlines() if l.strip()]
 
-def render(spans, out=sys.stdout):
+def render(spans, out=sys.stdout, errors_only=False):
+    if errors_only:                       # keep failed spans and every ancestor, so the path to a failure reads top-down
+        by_id = {s["span_id"]: s for s in spans}
+        keep = set()
+        for s in spans:
+            if s["status"] == "error":
+                while s:
+                    keep.add(s["span_id"]); s = by_id.get(s["parent_id"])
+        spans = [s for s in spans if s["span_id"] in keep]
     kids = {}
     for s in spans:
         kids.setdefault(s["parent_id"], []).append(s)
@@ -32,6 +40,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("path", nargs="?")
     ap.add_argument("--latest", metavar="PREFIX")
+    ap.add_argument("--errors-only", action="store_true", help="only failed spans and their parents")
     a = ap.parse_args()
     if a.latest:
         root = Path(__file__).resolve().parents[2] / "traces"
@@ -42,7 +51,7 @@ def main():
         print(f"# {a.path.name}")
     if not a.path:
         ap.error("give a trace file or --latest PREFIX")
-    render(load(a.path))
+    render(load(a.path), errors_only=a.errors_only)
 
 if __name__ == "__main__":
     main()
