@@ -1,8 +1,11 @@
 # Day 4 - agentic CI/CD. Each job gets the least it needs.
 #
-#   changes        always runs: did this PR touch Day 4? (no `paths:` filter - see below)
+#   changes        always runs: did this PR touch Day 4? did it touch AGENT BEHAVIOUR? (no `paths:` filter)
 #   offline-tests  every control, no model, no secrets
 #   evals          golden set against the PR's agent code; gates on it       (gateway key)
+#                  only when the PR can change what the agent does: prompts, contracts, the eval
+#                  harness and golden set, the MCP server and aira-ops it reads, labkit, pins. A
+#                  model eval is paid and not deterministic - running it on a README fix buys noise.
 #   pr-review      the BASE branch's reviewer reads the PR as data             (gateway key)
 #   comment        posts review.md                                            (the only write token)
 #   gate           always runs; the ONE required check on the protected branch
@@ -44,6 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       day4: ${{ steps.diff.outputs.day4 }}
+      agent: ${{ steps.diff.outputs.agent }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0, persist-credentials: false }
@@ -51,9 +55,14 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then echo "day4=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          if git diff --name-only "origin/$BASE_REF...HEAD" | grep -qE "^($D4/|\.github/workflows/day4\.yml)"; then
-            echo "day4=true" >> "$GITHUB_OUTPUT"; else echo "day4=false" >> "$GITHUB_OUTPUT"; fi
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "day4=true" >> "$GITHUB_OUTPUT"; echo "agent=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          files=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          echo "$files" | grep -qE "^($D4/|\.github/workflows/day4\.yml)" && d=true || d=false
+          # what the investigate agent is, reads, or is graded by
+          echo "$files" | grep -qE "^($D4/lab5-1-handoff/(agents|contracts)\.py|$D4/lab5-2-evals/|$D4/requirements\.txt|day3-integration-security/(lab4-2-mcp-server|aira-ops)/|labkit/python/|\.github/workflows/day4\.yml)" && a=true || a=false
+          echo "day4=$d" >> "$GITHUB_OUTPUT"; echo "agent=$a" >> "$GITHUB_OUTPUT"
+          echo "day4=$d agent=$a"
 
   offline-tests:
     needs: changes
@@ -70,7 +79,7 @@ jobs:
 
   evals:
     needs: [changes, offline-tests]
-    if: needs.changes.outputs.day4 == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: needs.changes.outputs.agent == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: model-evals     # Settings > Environments: add required reviewers to gate this job
@@ -103,7 +112,7 @@ jobs:
           retention-days: 14                 # traces and results hold ticket text: keep them short-lived
 
   pr-review:
-    needs: [changes, offline-tests]
+    needs: changes                   # beside the tests, not after: when tests fail, the review says why
     outputs:
       code: ${{ steps.review.outputs.code }}
     if: github.event_name == 'pull_request' && needs.changes.outputs.day4 == 'true' && github.event.pull_request.head.repo.full_name == github.repository
@@ -185,6 +194,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REVIEW_CODE: ${{ needs.pr-review.outputs.code }}
           DAY4: ${{ needs.changes.outputs.day4 }}
+          AGENT: ${{ needs.changes.outputs.agent }}
           CHANGES: ${{ needs.changes.result }}
           TESTS: ${{ needs.offline-tests.result }}
           EVALS: ${{ needs.evals.result }}
@@ -195,7 +205,11 @@ jobs:
           [ "$CHANGES" = "success" ] || { echo "::error::could not determine what changed"; exit 1; }
           [ "$DAY4" = "true" ] || { echo "no Day 4 changes - nothing to gate"; exit 0; }
           [ "$TESTS" = "success" ] || { echo "::error::offline tests: $TESTS"; exit 1; }
-          [ "$EVALS" = "success" ] || { echo "::error::evals: $EVALS (fork PRs: a maintainer runs them on a trusted branch)"; exit 1; }
+          if [ "$AGENT" = "true" ]; then
+            [ "$EVALS" = "success" ] || { echo "::error::evals: $EVALS (fork PRs: a maintainer runs them on a trusted branch)"; exit 1; }
+          else
+            echo "no change to agent behaviour - evals not needed (evals=$EVALS)"
+          fi
           if [ "$EVENT" = "pull_request" ]; then
             if [ "$REVIEW" != "success" ]; then
               if [ "$REVIEW_CODE" = "2" ] && gh pr view "$PR_NUMBER" --repo "$REPO" --json labels -q '.labels[].name' | grep -qx review-override; then
