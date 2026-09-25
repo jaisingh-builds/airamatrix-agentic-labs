@@ -329,12 +329,15 @@ class Handler(BaseHTTPRequestHandler):
             def comment():
                 ticket_row(db, tid, self.who)
                 b = self._json_body()
-                if not str(b.get("body", "")).strip():
+                # "comment" is accepted as well as "body": an MCP gateway that flattens an OpenAPI
+                # request into tool arguments treats a field named "body" as the whole request body.
+                text = str(b.get("body") or b.get("comment") or "").strip()
+                if not text:
                     raise ApiError(400, "invalid", "comment body is required")
                 db.execute("insert into comments(ticket_id,author,body,created_at) values(?,?,?,?)",
-                           (tid, self._actor(), b["body"].strip(), now()))
+                           (tid, self._actor(), text, now()))
                 db.execute("update tickets set updated_at=? where id=?", (now(), tid))
-                self._audit(db, "ticket.comment", tid, {"len": len(b["body"])})
+                self._audit(db, "ticket.comment", tid, {"len": len(text)})
                 db.commit()
                 return 201, ticket_row(db, tid)
             return self._idempotent(db, method, path, comment)
