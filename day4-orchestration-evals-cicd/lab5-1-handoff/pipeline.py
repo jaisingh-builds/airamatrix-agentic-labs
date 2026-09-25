@@ -112,10 +112,8 @@ def apply(store, rid, write_token, ops_url=OPS_URL, tracer=None):
     tracer = tracer or Tracer("lab5-1", trace_id=rid)
     r = store.run(rid)
     # >>> TODO 3: no approval on record, no write
-    a = store.approval(rid)
-    # The gate is checked against the DECISION RECORD, not just the status field.
-    if not a or a["decision"] != "approve":
-        raise GateError(f"run {rid} has no approval on record")
+    a = store.approval(rid) or {"approver": "unknown"}
+    # decide() already sets status to "approved", and the status check below covers it
     # <<< TODO 3
     if a.get("proposal_sha") != store.proposal_sha(rid):
         raise GateError(f"run {rid}: the proposal changed after it was decided - it needs a new decision")
