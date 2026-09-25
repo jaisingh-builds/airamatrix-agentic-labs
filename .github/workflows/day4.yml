@@ -1,0 +1,134 @@
+# Day 4 - agentic CI/CD. Four jobs, each with the least it needs:
+#
+#   offline-tests  every control, no model, no secrets              (fast, always)
+#   evals          golden set against the real agent; gates on it   (gateway secret, read-only repo)
+#   pr-review      headless Claude Code reviews the diff            (gateway secret, read-only repo)
+#   comment        posts review.md on the PR                        (write token, never runs PR code)
+#
+# Make offline-tests, evals and pr-review REQUIRED checks on the protected branch;
+# that is what turns an exit code into "cannot merge".
+name: day4
+
+on:
+  pull_request:                 # NOT pull_request_target: PR code never runs with the base repo's secrets
+    paths: ["day4-orchestration-evals-cicd/**", ".github/workflows/day4.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read                # default for every job; widened only where a job needs it
+
+concurrency:
+  group: day4-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  D4: day4-orchestration-evals-cicd
+  FORK: ${{ github.event.pull_request.head.repo.fork == true }}
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }     # no git token left on disk for anything to read
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r "$D4/requirements.txt"
+      - run: make day4-test
+
+  evals:
+    needs: offline-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ANTHROPIC_BASE_URL: ${{ secrets.LAB_GATEWAY_URL }}
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.LAB_GATEWAY_KEY }}
+      EVAL_MIN_PASS: "0.85"
+      EVAL_BUDGET_USD: "2.00"
+    steps:
+      - name: Gateway secret present?
+        run: |
+          if [ -n "$ANTHROPIC_AUTH_TOKEN" ]; then exit 0; fi
+          if [ "$FORK" = "true" ]; then echo "::notice::fork PR - no secrets; a maintainer runs evals"; exit 0; fi
+          echo "::error::LAB_GATEWAY_KEY is not set - evals cannot run, so this check fails (fail closed)"; exit 1
+      - uses: actions/checkout@v4
+        if: env.ANTHROPIC_AUTH_TOKEN != ''
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@v5
+        if: env.ANTHROPIC_AUTH_TOKEN != ''
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4              # the aira-ops MCP server is TypeScript run by node
+        if: env.ANTHROPIC_AUTH_TOKEN != ''
+        with: { node-version: "24" }
+      - if: env.ANTHROPIC_AUTH_TOKEN != ''
+        run: pip install -r "$D4/requirements.txt"
+      - name: Golden set (exit 0 pass, 1 gate failed, 2 could not run)
+        if: env.ANTHROPIC_AUTH_TOKEN != ''
+        working-directory: ${{ env.D4 }}/lab5-2-evals
+        run: python3 run_evals.py            # writes the table to the job summary
+      - uses: actions/upload-artifact@v4
+        if: always() && env.ANTHROPIC_AUTH_TOKEN != ''
+        with:
+          name: eval-results
+          path: |
+            ${{ env.D4 }}/lab5-2-evals/results/
+            traces/lab5-2-*.jsonl
+          retention-days: 14                 # traces hold ticket text: keep them short-lived
+
+  pr-review:
+    needs: offline-tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ANTHROPIC_BASE_URL: ${{ secrets.LAB_GATEWAY_URL }}
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.LAB_GATEWAY_KEY }}
+      REVIEW_BUDGET_USD: "0.50"
+    steps:
+      - name: Gateway secret present?
+        run: |
+          if [ -n "$ANTHROPIC_AUTH_TOKEN" ]; then exit 0; fi
+          if [ "$FORK" = "true" ]; then echo "::notice::fork PR - no secrets; review not run"; exit 0; fi
+          echo "::error::LAB_GATEWAY_KEY is not set - the review cannot run, so this check fails (fail closed)"; exit 1
+      - uses: actions/checkout@v4
+        if: env.ANTHROPIC_AUTH_TOKEN != ''
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-python@v5
+        if: env.ANTHROPIC_AUTH_TOKEN != ''
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        if: env.ANTHROPIC_AUTH_TOKEN != ''
+        with: { node-version: "24" }
+      - name: Install Claude Code (pinned)
+        if: env.ANTHROPIC_AUTH_TOKEN != ''
+        run: npm install -g @anthropic-ai/claude-code@2.1.282
+      - name: Review the diff (exit 0 ok, 2 blocking findings, 1 could not review)
+        if: env.ANTHROPIC_AUTH_TOKEN != ''
+        run: |
+          set +e
+          python3 "$D4/lab5-3-pr-review/review.py" --repo . --base "origin/${{ github.base_ref }}" --head HEAD --out review-out
+          code=$?
+          echo "${{ github.event.pull_request.number }}" > review-out/pr-number
+          echo "$code" > review-out/exit-code
+          exit $code
+      - uses: actions/upload-artifact@v4
+        if: always() && env.ANTHROPIC_AUTH_TOKEN != ''
+        with: { name: pr-review, path: review-out/, retention-days: 14 }
+
+  comment:
+    needs: pr-review
+    if: always() && github.event_name == 'pull_request' && needs.pr-review.result != 'skipped' && github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write           # the only job with a write token - and it never checks out PR code
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true      # no artefact = the review didn't run; nothing to post
+        with: { name: pr-review, path: review-out }
+      - name: Post the review (the model never posts - this step does)
+        if: hashFiles('review-out/review.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body-file review-out/review.md

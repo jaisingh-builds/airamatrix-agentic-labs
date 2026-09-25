@@ -37,7 +37,7 @@ Then open [day1-foundations/lab1-bare-metal-loop/README.md](day1-foundations/lab
 | Models | `claude-sonnet` (Sonnet 5, default), `claude-opus` (Opus 4.8, available from Day 1), `claude-haiku` |
 
 You do **not** need AWS credentials for Days 1–3. The gateway holds those.
-You will get AWS access on Day 4 for the AgentCore labs.
+Day 4 adds two Python packages (`claude-agent-sdk`, `langgraph`); see day4-orchestration-evals-cicd/README.md.
 
 ---
 

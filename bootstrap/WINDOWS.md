@@ -64,3 +64,17 @@ To run the other lab commands by hand in PowerShell, use `python` (or `py -3`) i
 | `/mcp` in Claude Code shows `failed` | Claude Code was started before `setup`. Reopen VS Code or the terminal |
 | `UnicodeEncodeError` / garbled output | Run through the script (it sets `PYTHONUTF8=1`) or set `$env:PYTHONUTF8=1` |
 | Tests fail after cloning on Windows | Line endings. `setup` renormalises a clean checkout to LF automatically |
+
+## Day 4
+
+```powershell
+powershell -ExecutionPolicy Bypass -File bootstrap\day4.ps1 setup     # venv + claude-agent-sdk + langgraph + offline tests
+powershell -ExecutionPolicy Bypass -File bootstrap\day4.ps1 test      # = make day4-test
+powershell -ExecutionPolicy Bypass -File bootstrap\day4.ps1 starters  # your TODO progress
+powershell -ExecutionPolicy Bypass -File bootstrap\day4.ps1 tokens    # Lab 5.1 tokens (user env vars, never files)
+powershell -ExecutionPolicy Bypass -File bootstrap\day4.ps1 evals     # Lab 5.2 golden set (~$0.70)
+powershell -ExecutionPolicy Bypass -File bootstrap\day4.ps1 review -Base main -Head my-branch   # Lab 5.3
+```
+
+Node 22.6+ is required (the MCP server runs `server.ts` directly). Lab 5.3 finds
+Claude Code through its `claude.cmd` shim.

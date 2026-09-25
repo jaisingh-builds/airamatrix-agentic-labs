@@ -11,6 +11,7 @@ help:
 	@echo "make test         - run every lab's offline checks"
 	@echo "make lab1         - run Lab 1.1 (python)"
 	@echo "make day3-test    - run every Day 3 offline suite"
+	@echo "make day4-test    - run every Day 4 offline suite (needs the Day 4 venv)"
 	@echo "make cost         - show your spend so far"
 	@echo ""
 	@echo "Live checks cost ~1 cent and are opt-in:  LAB_LIVE=1 make test"
@@ -64,3 +65,17 @@ day3-test:
 	@echo "=== day3: 4.2 mcp server ===" && cd $(D3)/lab4-2-mcp-server && python3 -m unittest -q test_mcp_server
 	@echo "=== day3: 4.3 agent service ===" && cd $(D3)/lab4-3-agent-service && python3 -m unittest -q test_stream test_service
 	@$(MAKE) --no-print-directory lab4-test
+
+D4 := day4-orchestration-evals-cicd
+.PHONY: day4-test day4-starters
+day4-test:
+	@echo "=== day4: common (spans) ===" && cd $(D4)/common && python3 -m unittest -q test_spans
+	@echo "=== day4: 5.1 handoff ===" && cd $(D4)/lab5-1-handoff && python3 -m unittest -q test_pipeline test_graph
+	@echo "=== day4: 5.2 evals ===" && cd $(D4)/lab5-2-evals && python3 -m unittest -q test_graders test_judge
+	@echo "=== day4: 5.3 pr review ===" && cd $(D4)/lab5-3-pr-review && python3 -m unittest -q test_review
+
+# Your TODO progress: these FAIL until the starters are finished.
+day4-starters:
+	-@cd $(D4)/lab5-1-handoff && LAB51_TARGET=starter python3 -m unittest -q test_pipeline
+	-@cd $(D4)/lab5-2-evals && LAB52_TARGET=starter python3 -m unittest -q test_graders
+	-@cd $(D4)/lab5-3-pr-review && LAB53_TARGET=starter python3 -m unittest -q test_review

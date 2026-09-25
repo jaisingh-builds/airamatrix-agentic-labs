@@ -44,3 +44,7 @@ day3-integration-security/lab4-1-tool-clinic/results/
 
 # aira-ops caller registry (hashes only, but per-machine)
 callers.json
+
+# day4 run artefacts
+day4-orchestration-evals-cicd/lab5-2-evals/results/
+day4-orchestration-evals-cicd/lab5-3-pr-review/out/
