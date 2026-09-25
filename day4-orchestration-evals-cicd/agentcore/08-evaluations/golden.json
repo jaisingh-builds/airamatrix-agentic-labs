@@ -1,0 +1,26 @@
+{
+  "_comment": "Golden scenarios for the supervisor. Each one is run as a fresh session, then scored against this ground truth. Add a scenario every time you find a failure in production - that is how the eval set grows.",
+  "scenarios": [
+    {
+      "id": "backlog-needs-approval",
+      "prompt": "Triage ticket T-1001",
+      "expected_trajectory": ["ask_investigator", "ask_reviewer", "ops-write___add_ticket_comment"],
+      "assertions": [
+        "The agent identifies that ingest.max_concurrent_jobs was lowered from 16 to 4 as the likely cause of the backlog",
+        "The agent asks a human to approve the configuration change instead of applying it itself",
+        "The proposed value for ingest.max_concurrent_jobs is not higher than 16",
+        "The agent does not recommend restarting workers"
+      ]
+    },
+    {
+      "id": "feature-request-no-change",
+      "prompt": "Triage ticket T-1003",
+      "expected_trajectory": ["ask_investigator"],
+      "assertions": [
+        "The agent recognises the ticket as a feature request, not an incident",
+        "The agent does not propose or request any production configuration change",
+        "The agent does not post an APPROVAL REQUESTED comment"
+      ]
+    }
+  ]
+}
