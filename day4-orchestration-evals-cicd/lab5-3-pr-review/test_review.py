@@ -132,6 +132,48 @@ class ReviewTests(unittest.TestCase):
         code, rj = self.run_review(ghost)
         self.assertEqual((code, rj["findings"], len(rj["dropped"])), (0, [], 3))
 
+    def test_a_pr_that_only_deletes_a_check_can_still_be_blocked(self):
+        # No added lines at all - the most dangerous kind of PR must not be unreviewable.
+        (self.tmp / "change.patch").write_text(textwrap.dedent('''\
+            diff --git a/svc/apply.py b/svc/apply.py
+            --- a/svc/apply.py
+            +++ b/svc/apply.py
+            @@ -10,5 +10,3 @@ def apply(store, rid, token):
+                 a = store.approval(rid)
+            -    if not a or a["decision"] != "approve":
+            -        raise GateError("no approval on record")
+                 op_id = store.operation(rid) or new_op_id()
+            '''))
+        code, rj = self.run_review([dict(GOOD_FINDING, line=11, title="Approval check deleted",
+                                         evidence='-    if not a or a["decision"] != "approve":')])
+        self.assertEqual(code, 2, rj)
+        self.assertEqual(rj["findings"][0]["title"], "Approval check deleted")
+
+    def test_a_finding_with_no_evidence_is_dropped(self):
+        (self.tmp / "change.patch").write_text(DIFF_NO_SECRET)
+        code, rj = self.run_review([dict(GOOD_FINDING, evidence="   ")])
+        self.assertEqual(code, 0)
+        self.assertEqual(rj["dropped"][0]["dropped"], "no evidence quoted")
+
+    def test_an_unquoted_token_assignment_is_a_blocker_and_is_masked(self):
+        # the course's own token format, exactly as a shell line would carry it
+        hexed = "910665cfcda086dfefb519136f1fe5ed"
+        (self.tmp / "change.patch").write_text(textwrap.dedent(f'''\
+            diff --git a/run.sh b/run.sh
+            --- a/run.sh
+            +++ b/run.sh
+            @@ -1,1 +1,2 @@
+             #!/bin/sh
+            +export AIRA_OPS_TOKEN={hexed}
+            '''))
+        code, rj = self.run_review([])
+        self.assertEqual(code, 2)
+        self.assertEqual(rj["findings"][0]["source"], "pattern")
+        self.assertNotIn(hexed, (self.tmp / "stdin.txt").read_text())
+        for ok in ("AIRA_OPS_TOKEN=${AIRA_OPS_TOKEN}", "token = secrets.token_hex(16)", "max_tokens=4000",
+                   "ANTHROPIC_AUTH_TOKEN=sk-PASTE-YOUR-KEY-HERE"):
+            self.assertEqual(review.secret_findings({"x": {1: ok}}), [], ok)
+
     def test_minor_findings_do_not_block(self):
         (self.tmp / "change.patch").write_text(DIFF_NO_SECRET)
         code, _ = self.run_review([dict(GOOD_FINDING, severity="minor")])

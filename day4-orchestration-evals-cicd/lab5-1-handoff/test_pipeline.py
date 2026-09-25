@@ -28,6 +28,9 @@ GOOD = {"diagnosis": "ingest.max_concurrent_jobs was cut from 16 to 4, capping t
                             "value": 8, "expected_version": 1}}
 APPROVE = {"verdict": "approve", "checks": [{"claim": "value is 4", "verified": True, "source": "get_config"}],
            "reasons": ["claims verified; halfway step is proportionate"]}
+REVISE = {"verdict": "revise", "checks": [{"claim": "value is 4", "verified": True, "source": "get_config"}],
+          "reasons": ["facts are right, but 16 is more than the evidence supports"],
+          "safer_alternative": "raise 4 -> 8 and watch worker memory"}
 BLOCK = {"verdict": "block", "checks": [{"claim": "value is 4", "verified": True}],
          "reasons": ["overrides a deliberate change with no evidence the memory issue is fixed"]}
 
@@ -127,6 +130,22 @@ class PipelineTests(unittest.TestCase):
             pipeline.decide(self.store, rid, "approve", "Jai", "looks fine")
         pipeline.decide(self.store, rid, "approve", "Jai", "memory fix shipped in 2.4.1", override=True)
         self.assertEqual(self.store.approval(rid)["override"], 1)
+
+    def test_a_reviewer_revise_is_not_an_approval(self):
+        # REVISE = "right facts, too big a change". Approving the ORIGINAL change must not be one click.
+        rid = self.new_run(FakeRunner(investigate=[GOOD], review=[REVISE]))
+        self.assertEqual(self.store.run(rid)["status"], "needs_rework")
+        with self.assertRaisesRegex(pipeline.GateError, "safer change"):
+            pipeline.decide(self.store, rid, "approve", "Jai", "looks fine")
+        pipeline.decide(self.store, rid, "approve", "Jai", "accepting the full change; memory fix confirmed", override=True)
+        self.assertEqual(self.store.approval(rid)["override"], 1)
+
+    def test_a_second_decision_is_a_conflict_even_when_it_races(self):
+        from store import Conflict
+        rid = self.new_run(FakeRunner(investigate=[GOOD], review=[APPROVE]))
+        self.store.record_decision(rid, "approve", "Jai", "first")
+        with self.assertRaises(Conflict):         # what a second process racing past decide()'s check hits
+            self.store.record_decision(rid, "reject", "Asha", "second")
 
     # --- contracts between stages
     def test_a_proposal_outside_the_contract_never_reaches_the_gate(self):

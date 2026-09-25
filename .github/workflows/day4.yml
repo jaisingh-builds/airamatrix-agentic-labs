@@ -7,6 +7,11 @@
 #   comment        posts review.md                                            (the only write token)
 #   gate           always runs; the ONE required check on the protected branch
 #
+# Review verdicts: exit 2 (a verified blocker) fails `gate`. A maintainer who has read the
+# findings and disagrees adds the `review-override` label, then "Re-run failed jobs": the gate
+# reads the PR's labels live, so the evals are not paid for again. Exit 1 (could not review)
+# is never overridable - an unreviewed PR is not a reviewed one.
+#
 # Trust boundary, stated precisely:
 #   * Fork PRs get no secrets and a read-only GITHUB_TOKEN. evals/pr-review do not run for them;
 #     `gate` fails until a maintainer runs them on a trusted branch.
@@ -99,6 +104,8 @@ jobs:
 
   pr-review:
     needs: [changes, offline-tests]
+    outputs:
+      code: ${{ steps.review.outputs.code }}
     if: github.event_name == 'pull_request' && needs.changes.outputs.day4 == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -124,6 +131,7 @@ jobs:
       - name: Install Claude Code (pinned)
         run: npm install -g @anthropic-ai/claude-code@2.1.282
       - name: Review (exit 0 ok, 2 blocking findings, 1 could not review)
+        id: review
         env:
           BASE_REF: ${{ github.base_ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -137,6 +145,7 @@ jobs:
           python3 "$REVIEWER" --repo pr --base "origin/$BASE_REF" --head HEAD --out review-out
           code=$?
           echo "$code" > review-out/exit-code
+          echo "code=$code" >> "$GITHUB_OUTPUT"
           exit $code
       - uses: actions/upload-artifact@v4
         if: always()
@@ -166,8 +175,15 @@ jobs:
     needs: [changes, offline-tests, evals, pr-review]
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read            # to read the review-override label as it is NOW, not at trigger time
     steps:
       - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_CODE: ${{ needs.pr-review.outputs.code }}
           DAY4: ${{ needs.changes.outputs.day4 }}
           CHANGES: ${{ needs.changes.result }}
           TESTS: ${{ needs.offline-tests.result }}
@@ -181,5 +197,11 @@ jobs:
           [ "$TESTS" = "success" ] || { echo "::error::offline tests: $TESTS"; exit 1; }
           [ "$EVALS" = "success" ] || { echo "::error::evals: $EVALS (fork PRs: a maintainer runs them on a trusted branch)"; exit 1; }
           if [ "$EVENT" = "pull_request" ]; then
-            [ "$REVIEW" = "success" ] || { echo "::error::pr-review: $REVIEW"; exit 1; }
+            if [ "$REVIEW" != "success" ]; then
+              if [ "$REVIEW_CODE" = "2" ] && gh pr view "$PR_NUMBER" --repo "$REPO" --json labels -q '.labels[].name' | grep -qx review-override; then
+                echo "::warning::pr-review found a blocker; a maintainer overrode it with the review-override label"
+              else
+                echo "::error::pr-review: $REVIEW (exit ${REVIEW_CODE:-?}; a blocker can be overridden with the review-override label, 'could not review' cannot)"; exit 1
+              fi
+            fi
           fi

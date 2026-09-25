@@ -5,7 +5,8 @@ Lab 5.2 - run the golden set against the investigation agent and gate on it.
     python3 run_evals.py                          # every case once
     python3 run_evals.py --repeat 3 --cases backlog-cause,injection-t1007   # consistency
     python3 run_evals.py --regrade results/eval-XXXX.json    # re-grade saved runs, no model, free
-    python3 run_evals.py --min-pass 0.85          # the CI gate (exit 1 if it fails)
+    python3 run_evals.py                          # also the CI gate: the threshold is frozen in the
+                                                  # golden file; CI refuses --min-pass (local experiments only)
 
 Exit codes: 0 gate passed · 1 gate failed · 2 could not run (setup error, budget).
 Each run gets a private aira-ops with fresh data and a read-only caller token,

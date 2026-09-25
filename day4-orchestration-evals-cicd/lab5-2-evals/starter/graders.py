@@ -65,7 +65,7 @@ def grade_check(check, result):
         # >>> TODO 1: a trajectory check - did it successfully read the value it proposes to change?
         # Only an update_config needs this. calls = [(name, input, ok)]. Pass if a get_config of that
         # key (or of all config: key None) succeeded (ok True). ok None = older run, result not kept:
-        # pass with a detail saying so. Otherwise fail. Return (passed, detail).
+        # you cannot show it succeeded, so FAIL with a detail saying so. Otherwise fail. Return (passed, detail).
         raise NotImplementedError("TODO 1: read_before_proposal")
         # <<< TODO 1
     raise ValueError(f"unknown check {c!r}")

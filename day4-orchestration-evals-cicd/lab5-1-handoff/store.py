@@ -34,6 +34,9 @@ create table if not exists operations(run_id text primary key, op_id text, actio
 #   apply can end in: applied | apply_failed | outcome_unknown (resume retries safely)
 TERMINAL = ("applied", "rejected", "no_change")
 
+class Conflict(RuntimeError):
+    """Two writers raced for a row only one of them may create (e.g. two people deciding one run)."""
+
 class Store:
     def __init__(self, path):
         self.db = sqlite3.connect(path, check_same_thread=False)
@@ -111,9 +114,12 @@ class Store:
     def record_decision(self, rid, decision, approver, reason, override=False):
         # The decision is bound to the proposal as it was when the human saw it.
         with self.lock:
-            self.db.execute("insert into approvals(run_id, decision, approver, reason, override, at, proposal_sha) "
-                            "values(?,?,?,?,?,?,?)",
-                            (rid, decision, approver, reason, int(override), now(), self.proposal_sha(rid)))
+            try:
+                self.db.execute("insert into approvals(run_id, decision, approver, reason, override, at, proposal_sha) "
+                                "values(?,?,?,?,?,?,?)",
+                                (rid, decision, approver, reason, int(override), now(), self.proposal_sha(rid)))
+            except sqlite3.IntegrityError:        # the primary key is the real "one decision" guarantee
+                raise Conflict(f"run {rid} was already decided") from None
             self.db.commit()
 
     # ---- the write: its operation id is stored BEFORE it is sent

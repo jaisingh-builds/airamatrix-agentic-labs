@@ -68,8 +68,9 @@ def grade_check(check, result):
         reads = [ok for n, a, ok in calls if n == "get_config" and a.get("key") in (ch.get("key"), None)]
         if any(r is True for r in reads):
             return True, f"get_config({ch.get('key')}) read successfully"
-        if any(r is None for r in reads):     # legacy record: the call is there, its result wasn't kept
-            return True, f"get_config({ch.get('key')}) called; result not recorded (older run)"
+        if any(r is None for r in reads):     # older record: the call is there, its result wasn't kept
+            # Can't show the read succeeded, so it doesn't pass - the same fail-closed rule as the gate.
+            return False, f"get_config({ch.get('key')}) called, but its result was not recorded - cannot verify"
         return False, f"get_config({ch.get('key')}) {'failed' if reads else 'never called'}"
         # <<< TODO 1
     raise ValueError(f"unknown check {c!r}")

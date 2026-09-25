@@ -24,7 +24,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE.parent / "common"))
 from contracts import PROPOSAL, VERDICT, ALLOWED_ACTIONS, validate, check_change, ContractError  # noqa: E402
-from store import Store, TERMINAL  # noqa: E402
+from store import Store, TERMINAL, Conflict  # noqa: E402
 from spans import Tracer  # noqa: E402
 import agents  # noqa: E402
 
@@ -77,7 +77,9 @@ def advance(store, runner, rid, tracer=None):
         verdict = run_stage(store, runner, tracer, rid, "review", agents.REVIEW_SYSTEM,
                             agents.review_prompt(r["account_id"], r["question"], proposal), VERDICT)
         store.set_status(rid, "reviewed")
-        store.set_status(rid, "needs_rework" if verdict["verdict"] == "block" else "awaiting_approval")
+        # Only an APPROVE verdict waits for a plain approval. BLOCK and REVISE both mean "not this change":
+        # approving the original proposal anyway needs an explicit override and a reason.
+        store.set_status(rid, "awaiting_approval" if verdict["verdict"] == "approve" else "needs_rework")
         tracer.event("gate.waiting", verdict=verdict["verdict"])
     return store.run(rid)
 
@@ -93,7 +95,9 @@ def decide(store, rid, decision, approver, reason, override=False):
     if store.approval(rid):
         raise GateError(f"run {rid} was already decided")
     if r["status"] == "needs_rework" and decision == "approve" and not override:
-        raise GateError("the reviewer blocked this proposal; approving it needs --override and a reason")
+        v = ((store.stage(rid, "review") or {}).get("output") or {}).get("verdict")
+        what = "blocked this proposal" if v == "block" else "asked for a safer change than this proposal"
+        raise GateError(f"the reviewer {what}; approving it needs --override and a reason")
     if r["status"] not in ("awaiting_approval", "needs_rework"):
         raise GateError(f"run {rid} is {r['status']}, not waiting for a decision")
     store.record_decision(rid, decision, approver.strip(), reason.strip(), override)
@@ -265,7 +269,7 @@ def main():
         elif a.cmd == "list":
             for r in store.runs():
                 print(f"{r['id']}  {r['account_id']}  {r['status']:<18} ${store.cost(r['id']):<7} {r['question'][:60]}")
-    except (GateError, ContractError, KeyError) as e:
+    except (GateError, ContractError, KeyError, Conflict) as e:
         raise SystemExit(f"refused: {e}")
     except agents.RunnerError as e:
         rid = getattr(a, "run", None) or locals().get("rid")

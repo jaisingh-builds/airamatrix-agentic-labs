@@ -61,8 +61,8 @@ def build(runner, ops_url, write_token_loader, checkpointer=None):
         answer = interrupt({"proposal": s["proposal"], "verdict": s["verdict"]})
         if not (answer.get("by") or "").strip() or not (answer.get("reason") or "").strip():
             raise pipeline.GateError("a decision needs an approver name and a reason")
-        if s["verdict"]["verdict"] == "block" and answer["decision"] == "approve" and not answer.get("override"):
-            raise pipeline.GateError("the reviewer blocked this proposal; approving it needs override")
+        if s["verdict"]["verdict"] != "approve" and answer["decision"] == "approve" and not answer.get("override"):
+            raise pipeline.GateError(f"the reviewer said {s['verdict']['verdict']}; approving it needs override")
         # LangGraph checkpoints BETWEEN nodes, not inside them. An op id minted inside apply()
         # would be lost if apply crashed after sending; minted here, it is saved before apply runs.
         return {"decision": answer, "op_id": s.get("op_id") or str(uuid.uuid4())}

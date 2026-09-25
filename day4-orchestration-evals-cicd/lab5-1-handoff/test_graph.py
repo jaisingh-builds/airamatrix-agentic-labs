@@ -9,7 +9,7 @@ try:
     import graph_langgraph
 except ImportError:
     graph_langgraph = None
-from test_pipeline import FakeRunner, GOOD, APPROVE, BLOCK
+from test_pipeline import FakeRunner, GOOD, APPROVE, BLOCK, REVISE
 
 @unittest.skipIf(graph_langgraph is None, "langgraph not installed")
 class GraphTests(unittest.TestCase):
@@ -34,6 +34,12 @@ class GraphTests(unittest.TestCase):
         app.invoke({"account_id": "ACC-1001", "question": "q"}, self.cfg("t3"))
         with self.assertRaises(Exception):
             app.invoke(Command(resume={"decision": "approve", "by": "", "reason": "ok", "override": True}), self.cfg("t3"))
+
+    def test_graph_gate_treats_revise_as_not_approved(self):
+        app = graph_langgraph.build(FakeRunner(investigate=[GOOD], review=[REVISE]), "http://127.0.0.1:1", lambda: "x")
+        app.invoke({"account_id": "ACC-1001", "question": "q"}, self.cfg("t5"))
+        with self.assertRaisesRegex(Exception, "revise"):
+            app.invoke(Command(resume={"decision": "approve", "by": "Jai", "reason": "ok"}), self.cfg("t5"))
 
     def test_the_operation_id_is_checkpointed_before_apply_runs(self):
         app = graph_langgraph.build(FakeRunner(investigate=[GOOD], review=[APPROVE]), "http://127.0.0.1:1", lambda: "x")

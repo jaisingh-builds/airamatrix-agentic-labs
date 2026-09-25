@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Lab 5.3 demo: make four realistic PR branches off a base branch, in a separate
+Lab 5.3 demo: make five realistic PR branches off a base branch, in a separate
 git worktree so your own checkout is never touched. Nothing is pushed.
 
     python3 demo_prs.py --base day4 --worktree /tmp/d4wt

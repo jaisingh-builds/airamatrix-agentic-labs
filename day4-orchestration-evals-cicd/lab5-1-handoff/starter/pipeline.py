@@ -27,7 +27,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent   # starter/ sits one level below the lab
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE.parent / "common"))
 from contracts import PROPOSAL, VERDICT, ALLOWED_ACTIONS, validate, check_change, ContractError  # noqa: E402
-from store import Store, TERMINAL  # noqa: E402
+from store import Store, TERMINAL, Conflict  # noqa: E402
 from spans import Tracer  # noqa: E402
 import agents  # noqa: E402
 
@@ -79,7 +79,9 @@ def advance(store, runner, rid, tracer=None):
         verdict = run_stage(store, runner, tracer, rid, "review", agents.REVIEW_SYSTEM,
                             agents.review_prompt(r["account_id"], r["question"], proposal), VERDICT)
         store.set_status(rid, "reviewed")
-        store.set_status(rid, "needs_rework" if verdict["verdict"] == "block" else "awaiting_approval")
+        # Only an APPROVE verdict waits for a plain approval. BLOCK and REVISE both mean "not this change":
+        # approving the original proposal anyway needs an explicit override and a reason.
+        store.set_status(rid, "awaiting_approval" if verdict["verdict"] == "approve" else "needs_rework")
         tracer.event("gate.waiting", verdict=verdict["verdict"])
     return store.run(rid)
 
@@ -90,8 +92,8 @@ def decide(store, rid, decision, approver, reason, override=False):
         raise ValueError("decision must be approve or reject")
     # >>> TODO 2: the gate - who may decide, when, and what gets recorded
     # Refuse (GateError) unless: approver and reason are non-empty; the run has no
-    # decision yet; it is awaiting_approval - or needs_rework AND override=True for
-    # an approve. Then record the decision and set status approved / rejected.
+    # decision yet; it is awaiting_approval - or needs_rework (the reviewer said block OR
+    # revise) AND override=True for an approve. Then record the decision and set status approved / rejected.
     raise NotImplementedError("TODO 2: the gate")
     # <<< TODO 2
     Tracer("lab5-1", trace_id=rid).event("gate.decided", decision=decision, approver=approver, override=override)
@@ -261,7 +263,7 @@ def main():
         elif a.cmd == "list":
             for r in store.runs():
                 print(f"{r['id']}  {r['account_id']}  {r['status']:<18} ${store.cost(r['id']):<7} {r['question'][:60]}")
-    except (GateError, ContractError, KeyError) as e:
+    except (GateError, ContractError, KeyError, Conflict) as e:
         raise SystemExit(f"refused: {e}")
     except agents.RunnerError as e:
         rid = getattr(a, "run", None) or locals().get("rid")

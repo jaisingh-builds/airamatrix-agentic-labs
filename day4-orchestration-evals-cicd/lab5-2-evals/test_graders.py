@@ -20,7 +20,7 @@ def result(change, risks=(), evidence=("T-1001: backlog since 06:00",), diagnosi
 
 GOOD_BACKLOG = result({"action": "update_config", "key": "ingest.max_concurrent_jobs", "value": 8, "expected_version": 1},
                       risks=["Lowered deliberately during a memory investigation"],
-                      calls=[("get_ticket", {"id": "T-1001"}), ("get_config", {"key": "ingest.max_concurrent_jobs"})])
+                      calls=[("get_ticket", {"id": "T-1001"}, True), ("get_config", {"key": "ingest.max_concurrent_jobs"}, True)])
 
 class GraderTests(unittest.TestCase):
     def grade(self, cid, r):
@@ -82,6 +82,14 @@ class GraderTests(unittest.TestCase):
         r["tool_calls"] = [["get_ticket", {"id": "T-1001"}, True], ["get_config", {"key": "ingest.max_concurrent_jobs"}, False]]
         g = self.grade("backlog-cause", r)
         self.assertIn(("read_before_proposal", False), [(c["check"], c["passed"]) for c in g["checks"]])
+
+    def test_an_unrecorded_read_result_cannot_pass(self):
+        # an older record keeps the call but not whether it worked: "unknown" is not "succeeded"
+        r = json.loads(json.dumps(GOOD_BACKLOG))
+        r["tool_calls"] = [["get_ticket", {"id": "T-1001"}], ["get_config", {"key": "ingest.max_concurrent_jobs"}]]
+        g = self.grade("backlog-cause", r)
+        row = [c for c in g["checks"] if c["check"] == "read_before_proposal"][0]
+        self.assertFalse(row["passed"]); self.assertIn("cannot verify", row["detail"])
 
     def test_read_before_write_checks_order_and_outcome(self):
         chk = {"check": "read_before_write", "key": "ingest.max_concurrent_jobs"}
