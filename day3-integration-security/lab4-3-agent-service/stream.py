@@ -68,8 +68,25 @@ def assemble(lines, on_text=None, cancelled=lambda: False):
     content = [blocks[i] for i in sorted(blocks)]
     return {"content": content, "stop_reason": stop_reason, "usage": usage}
 
-def stream_messages(base_url, api_key, payload, on_text=None, cancelled=lambda: False, read_timeout=60):
-    """POST a streaming request and assemble the reply. Raises on HTTP errors."""
+def abort(resp):
+    """Close a live streaming response from ANOTHER thread.
+
+    The reading thread may be blocked inside a socket read, waiting for bytes
+    that are not coming. Checking a flag between chunks can't reach it there;
+    shutting the socket down can - the blocked read returns at once. Closing
+    the connection is also how the gateway learns to stop generating (and
+    billing) the rest of the answer.
+    """
+    try:
+        resp.fp.raw._sock.shutdown(socket.SHUT_RDWR)
+    except (AttributeError, OSError):
+        pass
+
+def stream_messages(base_url, api_key, payload, on_text=None, cancelled=lambda: False,
+                    read_timeout=60, on_open=None):
+    """POST a streaming request and assemble the reply. Raises on HTTP errors.
+
+    on_open(resp) is called with the live response, so a canceller can abort() it."""
     body = dict(payload, stream=True)
     req = urllib.request.Request(
         f"{base_url.rstrip('/')}/v1/messages", data=json.dumps(body).encode(), method="POST",
@@ -78,5 +95,15 @@ def stream_messages(base_url, api_key, payload, on_text=None, cancelled=lambda: 
     # read_timeout bounds the gap BETWEEN chunks, so a stalled stream fails
     # instead of hanging the request thread forever.
     with urllib.request.urlopen(req, timeout=read_timeout) as resp:
+        if on_open:
+            on_open(resp)
         lines = (l.decode("utf-8", "replace") for l in resp)
-        return assemble(lines, on_text=on_text, cancelled=cancelled)
+        try:
+            reply = assemble(lines, on_text=on_text, cancelled=cancelled)
+        except (OSError, ValueError):
+            if cancelled():            # the read failed because we aborted it on purpose
+                raise StreamCancelled()
+            raise
+        if cancelled():                # an aborted socket can also look like a clean EOF
+            raise StreamCancelled()
+        return reply

@@ -4,8 +4,8 @@
  * Real TypeScript on the official MCP SDK. No npm install: the SDK is vendored
  * as one file (see vendor/README.md for its version, hash and rebuild command).
  *
- *   node --experimental-strip-types server.ts     # Node 22.6+
- *   node server.ts                                # Node 23.6+
+ *   node --experimental-strip-types server.ts     # Node 22.6 - 22.17
+ *   node server.ts                                # Node 22.18+ (tested: 22.22, 26.8)
  *
  * It speaks MCP over stdio, so a client launches it as a child process. It never
  * prints to stdout except protocol messages: a stray console.log would corrupt the
@@ -14,7 +14,7 @@
  * Secrets: AIRA_OPS_TOKEN comes from the environment the client passes in. It is
  * never in this file, never in a tool result, and never in the model's context.
  */
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { McpServer, ResourceTemplate, StdioServerTransport, z } from "./vendor/mcp-sdk.mjs";
 
 const BASE = (process.env.AIRA_OPS_URL ?? "http://127.0.0.1:8150").replace(/\/$/, "");
@@ -78,15 +78,37 @@ function fail(err: Json): ToolResult {
 }
 
 /**
- * A retried call must not write twice. If the model does not send a key, derive
- * one from the tool name and its exact arguments: the same call replays, a
- * different call writes. (Two genuinely identical comments collapse into one -
- * a trade-off worth saying out loud.)
+ * Idempotency: one key per LOGICAL OPERATION, minted here - never by the model,
+ * never derived from the arguments (two deliberate, identical comments are two
+ * operations, not one).
+ *
+ * - A new tool call is a new operation: a fresh random key.
+ * - If the HTTP call fails in a way that leaves the outcome unknown (timeout,
+ *   connection dropped), the error hands the key back as operation_id. The
+ *   model passes it as idempotency_key only to retry that same operation, and
+ *   aira-ops applies it at most once.
+ * aira-ops binds each key to its exact payload, so a reused key can never
+ * carry a different write.
  */
-function keyFor(tool: string, args: Json, explicit?: string): string {
-  if (explicit) return explicit;
-  const canonical = JSON.stringify(args, Object.keys(args).sort());
-  return `${tool}:` + createHash("sha256").update(canonical).digest("hex").slice(0, 32);
+async function write(method: string, path: string, body: Json, operationId?: string): Promise<ToolResult> {
+  const key = operationId ?? randomUUID();
+  const r = await api(method, path, body, key);
+  if (r.isError && isTransportFailure(r)) {
+    return fail({
+      code: "outcome_unknown",
+      message: "aira-ops did not confirm this write; it may or may not have been applied",
+      retryable: true,
+      operation_id: key,
+      hint: `To retry THIS operation safely, call the tool again with idempotency_key="${key}" - ` +
+        "it will be applied at most once. For a new, separate change, omit idempotency_key.",
+    });
+  }
+  return r;
+}
+
+function isTransportFailure(r: ToolResult): boolean {
+  const code = (JSON.parse(r.content[0].text).error as Json | undefined)?.code;
+  return code === "timeout" || code === "unavailable";
 }
 
 function refuseIfReadOnly(): ToolResult | null {
@@ -101,7 +123,7 @@ const Idem = z
   .string()
   .max(80)
   .optional()
-  .describe("Optional. Reuse the same value when retrying this exact write so it is not applied twice.");
+  .describe("Omit for a new change. Only when retrying a write that failed with outcome_unknown, pass its operation_id here.");
 
 const server = new McpServer({ name: "aira-ops", version: "1.0.0" });
 
@@ -178,11 +200,11 @@ server.registerTool(
     title: "Comment on a ticket",
     description: "Add a comment to a ticket. Visible to the customer. Requires approval.",
     inputSchema: { id: TicketId, body: z.string().min(1).max(4000), idempotency_key: Idem },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   async ({ id, body, idempotency_key }) =>
     refuseIfReadOnly() ??
-    api("POST", `/tickets/${id}/comments`, { body }, keyFor("add_ticket_comment", { id, body }, idempotency_key)),
+    write("POST", `/tickets/${id}/comments`, { body }, idempotency_key),
 );
 
 server.registerTool(
@@ -201,7 +223,7 @@ server.registerTool(
   },
   async ({ id, status, idempotency_key }) =>
     refuseIfReadOnly() ??
-    api("PATCH", `/tickets/${id}`, { status }, keyFor("update_ticket_status", { id, status }, idempotency_key)),
+    write("PATCH", `/tickets/${id}`, { status }, idempotency_key),
 );
 
 server.registerTool(
@@ -222,12 +244,7 @@ server.registerTool(
   },
   async ({ key, value, expected_version, idempotency_key }) =>
     refuseIfReadOnly() ??
-    api(
-      "PUT",
-      `/config/${encodeURIComponent(key)}`,
-      { value, expected_version },
-      keyFor("update_config", { key, value, expected_version }, idempotency_key),
-    ),
+    write("PUT", `/config/${encodeURIComponent(key)}`, { value, expected_version }, idempotency_key),
 );
 
 // ------------------------------------------------------------------ resources

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "aira-ops": {
+      "type": "stdio",
+      "command": "./run-server.sh",
+      "args": [],
+      "env": {
+        "AIRA_OPS_URL": "${AIRA_OPS_URL:-http://127.0.0.1:8150}"
+      }
+    }
+  }
+}

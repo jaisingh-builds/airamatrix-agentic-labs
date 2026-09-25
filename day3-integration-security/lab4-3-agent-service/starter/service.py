@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+Lab 4.3 STARTER - identical to ../service.py except request_cancel(), which is yours to write.
+
+    python3 starter/service.py                          # run it (same port, same page)
+    LAB43_TARGET=starter python3 -m unittest test_service
+
 Lab 4.3 — an agent inside an existing service, streamed to a browser.
 
     python3 service.py            # http://127.0.0.1:8160  (needs aira-ops running)
@@ -27,7 +32,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent   # starter/ sits one level below the lab
+sys.path.insert(0, str(HERE))                    # for stream.py
 REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "labkit" / "python"))
 from agentic_core import Config, BudgetGuard  # noqa: E402
@@ -147,15 +153,16 @@ class Run:
     def request_cancel(self):
         """Stop this run as soon as possible - called from the HTTP thread.
 
-        Setting the flag alone is not enough: the worker may be blocked inside a
-        socket read, waiting for the model's next bytes (up to STREAM_STALL_S).
-        Abort the live stream so that read returns now; the worker sees the
-        flag and finishes the run as 'cancelled', keeping the partial text.
-        A tool call already in flight is allowed to finish (<= its 8 s timeout).
+        TODO (Lab 4.3): right now Cancel does nothing. Make it take effect NOW,
+        not whenever the model next happens to send bytes:
+          1. Set the flag the worker checks between steps and between chunks.
+          2. The worker may be blocked inside a socket read, waiting for the
+             model's next bytes (up to STREAM_STALL_S). A flag can't reach it
+             there. Abort the live stream (self._resp) with abort() from
+             stream.py, so that read returns at once.
+        Done when:  LAB43_TARGET=starter python3 -m unittest test_service
         """
-        self.cancel = True
-        if self._resp is not None:
-            abort(self._resp)
+        pass
 
     def _on_deadline(self):
         self.timed_out = True

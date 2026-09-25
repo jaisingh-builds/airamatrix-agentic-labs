@@ -19,9 +19,23 @@ It behaves like the internal systems agents get wired into at work:
   gets 409, not a silent overwrite.
 * Errors share one contract an agent can act on:
       {"error": {"code", "message", "retryable", "hint"}}
-* Every write lands in an audit log with the caller's X-Actor header.
+* Every write lands in an audit log.
+
+Two ways to authenticate, and the difference is the lesson:
+
+* The shared AIRA_OPS_TOKEN. Anyone holding it is the same caller, so the
+  X-Actor header is only a label the caller chose. The audit log says so:
+  verified = 0.
+* Per-caller tokens (--callers callers.json). Each caller gets its own token;
+  the file stores only its SHA-256, plus the caller's actor name, the accounts
+  it may see and whether it may write. The actor then comes from the token,
+  not the header (verified = 1), and a caller scoped to ACC-1001 gets 404 for
+  anything belonging to ACC-1003.
+
+      python3 aira_ops.py --callers callers.json --issue-token triage-agent \
+          --accounts ACC-1001            # prints the token once; add --write
 """
-import argparse, json, os, re, sqlite3, threading, time, uuid
+import argparse, hashlib, json, os, re, sqlite3, threading, time, uuid
 from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -55,16 +69,33 @@ create table if not exists jobs(id text primary key, account_id text,
     slide_count integer, priority text, status text, submitted_at text);
 create table if not exists config(key text primary key, value text,
     version integer, description text, updated_at text);
-create table if not exists idempotency(key text primary key, method text,
-    path text, status integer, body text, created_at text);
+create table if not exists idem(scope text, key text, fingerprint text,
+    method text, path text, status integer, body text, created_at text,
+    primary key(scope, key));
 create table if not exists audit(id integer primary key autoincrement, at text,
     actor text, action text, target text, detail text);
 """
+
+def sha256(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+def load_callers(path):
+    """callers.json -> {token_sha256: identity}. The file holds hashes, never tokens."""
+    if not path or not Path(path).exists():
+        return {}
+    out = {}
+    for c in json.loads(Path(path).read_text()).get("callers", []):
+        out[c["token_sha256"]] = {"actor": c["actor"], "accounts": c.get("accounts", "*"),
+                                  "write": bool(c.get("write", False)), "verified": True}
+    return out
 
 def connect(path):
     db = sqlite3.connect(path, check_same_thread=False)
     db.row_factory = sqlite3.Row
     db.executescript(SCHEMA)
+    cols = {r[1] for r in db.execute("pragma table_info(audit)")}
+    if "verified" not in cols:   # databases created before verified identities existed
+        db.execute("alter table audit add column verified integer default 0")
     return db
 
 def seed(db):
@@ -101,15 +132,20 @@ class ApiError(Exception):
             e["hint"] = self.hint
         return {"error": e}
 
-def ticket_row(db, tid):
+def ticket_row(db, tid, who=None):
     r = db.execute("select * from tickets where id=?", (tid,)).fetchone()
-    if not r:
+    # A ticket this caller may not see is reported exactly like one that does
+    # not exist: a 403 would confirm to an attacker that T-1007 is real.
+    if not r or (who and not visible(who, r["account_id"])):
         raise ApiError(404, "not_found", f"no ticket {tid}",
                        hint="Use search_tickets to find valid ticket ids (format T-1001).")
     t = dict(r)
     t["comments"] = [dict(c) for c in db.execute(
         "select author, body, created_at from comments where ticket_id=? order by id", (tid,))]
     return t
+
+def visible(who, account_id):
+    return who["accounts"] == "*" or account_id in who["accounts"]
 
 class Handler(BaseHTTPRequestHandler):
     def handle(self):
@@ -147,14 +183,30 @@ class Handler(BaseHTTPRequestHandler):
         return v
 
     def _auth(self):
-        want = self.server.token
+        """Who is calling - decided by the token, never by a header."""
         got = self.headers.get("Authorization", "")
-        if not want or got != f"Bearer {want}":
-            raise ApiError(401, "unauthorised", "missing or wrong bearer token",
-                           hint="Set AIRA_OPS_TOKEN in the environment of the caller.")
+        tok = got[7:] if got.startswith("Bearer ") else ""
+        callers = getattr(self.server, "callers", {}) or {}
+        if tok and sha256(tok) in callers:
+            self.who = dict(callers[sha256(tok)])
+            return
+        want = self.server.token
+        if want and tok == want:
+            # The shared token: every holder is the same caller. X-Actor is a
+            # label the caller chose, and the audit log records it as unverified.
+            self.who = {"actor": self.headers.get("X-Actor", "unknown"), "accounts": "*",
+                        "write": True, "verified": False}
+            return
+        raise ApiError(401, "unauthorised", "missing or wrong bearer token",
+                       hint="Set AIRA_OPS_TOKEN in the environment of the caller.")
 
     def _actor(self):
-        return self.headers.get("X-Actor", "unknown")
+        return self.who["actor"]
+
+    def _require_write(self):
+        if not self.who["write"]:
+            raise ApiError(403, "forbidden", f"{self.who['actor']} is not allowed to write",
+                           hint="This caller is read-only. A human with write access has to make this change.")
 
     def _dispatch(self, method):
         # Read the whole body before anything else, even if we are about to
@@ -189,26 +241,37 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- idempotent writes
     def _idempotent(self, db, method, path, fn):
+        self._require_write()
         key = self.headers.get("Idempotency-Key")
         if not key:
             raise ApiError(400, "invalid", "writes require an Idempotency-Key header",
                            hint="Send a fresh UUID per logical write; reuse it on retry.")
-        prior = db.execute("select * from idempotency where key=?", (key,)).fetchone()
+        # A key names ONE operation: this caller, this route, this exact payload.
+        # Scoped per caller so two callers can't collide (or read each other's
+        # stored results); bound to the payload so a reused key can't smuggle in
+        # a different write and get the old answer back.
+        scope = self.who["actor"] if self.who["verified"] else "shared"
+        fp = sha256(f"{method} {path}\n" + self._raw_body.decode("utf-8", "replace"))
+        prior = db.execute("select * from idem where scope=? and key=?", (scope, key)).fetchone()
         if prior:
-            if (prior["method"], prior["path"]) != (method, path):
-                raise ApiError(422, "invalid", "Idempotency-Key reused for a different request")
+            if prior["fingerprint"] != fp:
+                raise ApiError(422, "invalid", "Idempotency-Key was already used for a different request",
+                               hint="Use a new key for a new operation; reuse a key only to retry the identical request.")
             body = json.loads(prior["body"])
             body["_replayed"] = True
             return prior["status"], body
         status, obj = fn()
-        db.execute("insert into idempotency values(?,?,?,?,?,?)",
-                   (key, method, path, status, json.dumps(obj), now()))
+        db.execute("insert into idem values(?,?,?,?,?,?,?,?)",
+                   (scope, key, fp, method, path, status, json.dumps(obj), now()))
         db.commit()
         return status, obj
 
     def _audit(self, db, action, target, detail):
-        db.execute("insert into audit(at,actor,action,target,detail) values(?,?,?,?,?)",
-                   (now(), self._actor(), action, target, json.dumps(detail)))
+        claimed = self.headers.get("X-Actor")
+        if self.who["verified"] and claimed and claimed != self.who["actor"]:
+            detail = dict(detail, claimed_actor=claimed)   # evidence of an impersonation attempt
+        db.execute("insert into audit(at,actor,action,target,detail,verified) values(?,?,?,?,?,?)",
+                   (now(), self._actor(), action, target, json.dumps(detail), int(self.who["verified"])))
 
     # -- routes
     def _route(self, db, method, parts, q):
@@ -227,12 +290,15 @@ class Handler(BaseHTTPRequestHandler):
                 sql += " and priority=?"; args.append(q["priority"])
             if q.get("q"):
                 sql += " and (title like ? or body like ?)"; args += [f"%{q['q']}%"] * 2
+            if self.who["accounts"] != "*":
+                sql += f" and account_id in ({','.join('?' * len(self.who['accounts']))})"
+                args += list(self.who["accounts"])
             limit = min(int(q.get("limit", 20)), 50)
             rows = [dict(r) for r in db.execute(sql + " order by updated_at desc limit ?", args + [limit])]
             return 200, {"count": len(rows), "tickets": rows}
 
         if len(parts) == 2 and parts[0] == "tickets" and method == "GET":
-            return 200, ticket_row(db, parts[1])
+            return 200, ticket_row(db, parts[1], self.who)
 
         if parts == ["tickets"] and method == "POST":
             def create():
@@ -243,7 +309,7 @@ class Handler(BaseHTTPRequestHandler):
                 if b.get("priority", "P3") not in PRIORITIES:
                     errs.append("priority must be one of P1, P2, P3, P4")
                 acct = b.get("account_id")
-                if not acct or not db.execute("select 1 from accounts where id=?", (acct,)).fetchone():
+                if not acct or not visible(self.who, acct) or not db.execute("select 1 from accounts where id=?", (acct,)).fetchone():
                     errs.append(f"account_id {acct!r} does not exist")
                 if errs:
                     raise ApiError(400, "invalid", "; ".join(errs),
@@ -261,7 +327,7 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts) == 3 and parts[0] == "tickets" and parts[2] == "comments" and method == "POST":
             tid = parts[1]
             def comment():
-                ticket_row(db, tid)
+                ticket_row(db, tid, self.who)
                 b = self._json_body()
                 if not str(b.get("body", "")).strip():
                     raise ApiError(400, "invalid", "comment body is required")
@@ -276,7 +342,7 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts) == 2 and parts[0] == "tickets" and method == "PATCH":
             tid = parts[1]
             def patch():
-                t = ticket_row(db, tid)
+                t = ticket_row(db, tid, self.who)
                 b = self._json_body()
                 new = b.get("status")
                 if new not in TICKET_STATUSES:
@@ -298,7 +364,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(400, "invalid", f"{aid!r} is not an account id",
                                hint="Account ids look like ACC-1001.")
             r = db.execute("select * from accounts where id=?", (aid,)).fetchone()
-            if not r:
+            if not r or not visible(self.who, aid):
                 raise ApiError(404, "not_found", f"no account {aid}")
             a = dict(r)
             a["open_tickets"] = db.execute(
@@ -312,11 +378,14 @@ class Handler(BaseHTTPRequestHandler):
             for f in ("status", "account_id"):
                 if q.get(f):
                     sql += f" and {f}=?"; args.append(q[f])
+            if self.who["accounts"] != "*":
+                sql += f" and account_id in ({','.join('?' * len(self.who['accounts']))})"
+                args += list(self.who["accounts"])
             rows = [dict(r) for r in db.execute(sql + " order by submitted_at desc limit 50", args)]
             return 200, {"count": len(rows), "jobs": rows}
         if len(parts) == 2 and parts[0] == "jobs" and method == "GET":
             r = db.execute("select * from jobs where id=?", (parts[1],)).fetchone()
-            if not r:
+            if not r or not visible(self.who, r["account_id"]):
                 raise ApiError(404, "not_found", f"no job {parts[1]}")
             return 200, dict(r)
 
@@ -365,6 +434,8 @@ class Handler(BaseHTTPRequestHandler):
 
         # audit ---------------------------------------------------------------
         if parts == ["audit"] and method == "GET":
+            if self.who["accounts"] != "*":
+                raise ApiError(403, "forbidden", "the audit log is not visible to account-scoped callers")
             rows = [dict(r) for r in db.execute("select * from audit order by id desc limit 50")]
             return 200, {"count": len(rows), "entries": rows}
 
@@ -378,7 +449,26 @@ def main():
     ap.add_argument("--reset", action="store_true", help="delete the database and reseed")
     ap.add_argument("--latency", type=float, default=0.0, help="seconds to add to every call")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--callers", default=os.environ.get("AIRA_OPS_CALLERS"),
+                    help="JSON file of per-caller token hashes and permissions")
+    ap.add_argument("--issue-token", metavar="ACTOR", help="add a caller to --callers, print its token once, exit")
+    ap.add_argument("--accounts", default="*", help="with --issue-token: comma-separated account ids, or *")
+    ap.add_argument("--write", action="store_true", help="with --issue-token: allow writes")
     a = ap.parse_args()
+    if a.issue_token:
+        if not a.callers:
+            raise SystemExit("--issue-token needs --callers FILE")
+        import secrets
+        tok = secrets.token_hex(16)
+        f = Path(a.callers)
+        data = json.loads(f.read_text()) if f.exists() else {"callers": []}
+        data["callers"] = [c for c in data["callers"] if c["actor"] != a.issue_token]
+        data["callers"].append({"actor": a.issue_token, "token_sha256": sha256(tok),
+                                "accounts": "*" if a.accounts == "*" else a.accounts.split(","),
+                                "write": a.write})
+        f.write_text(json.dumps(data, indent=2) + "\n")
+        print(tok)   # shown once; only its hash is stored
+        return
     token = os.environ.get("AIRA_OPS_TOKEN")
     if not token:
         raise SystemExit("AIRA_OPS_TOKEN is not set. It is a secret: put it in your shell "
@@ -392,7 +482,9 @@ def main():
         seed(db)
     srv = ThreadingHTTPServer((a.host, a.port), Handler)
     srv.db, srv.token, srv.latency, srv.quiet = db, token, a.latency, a.quiet
-    print(f"aira-ops on http://{a.host}:{a.port}  (db: {Path(a.db).name}{', fresh seed' if fresh else ''})")
+    srv.callers = load_callers(a.callers)
+    print(f"aira-ops on http://{a.host}:{a.port}  (db: {Path(a.db).name}{', fresh seed' if fresh else ''}"
+          f"{f', {len(srv.callers)} verified callers' if srv.callers else ''})")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

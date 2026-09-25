@@ -83,6 +83,8 @@ class ServiceTests(unittest.TestCase):
                           LAB_MODEL="claude-sonnet", AIRA_OPS_TOKEN=OPS_TOKEN,
                           AIRA_OPS_URL=f"http://127.0.0.1:{ops_port}")
         sys.path.insert(0, str(HERE))
+        if os.environ.get("LAB43_TARGET") == "starter":     # run the suite against YOUR code
+            sys.path.insert(0, str(HERE / "starter"))
         import service
         cls.service = service
         service.OPS_URL, service.OPS_TOKEN = f"http://127.0.0.1:{ops_port}", OPS_TOKEN
@@ -139,6 +141,17 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(row[0], "interrupted")
         self.assertIn("restarted", row[1])
 
+    # --- the starter must stay the reference minus one method, or the lab drifts
+    def test_starter_differs_from_the_reference_only_in_request_cancel(self):
+        import re
+        def strip(src):
+            src = re.sub(r"    def request_cancel\(self\):.*?(?=    def _on_deadline)", "", src, flags=re.S)
+            src = src.split("Lab 4.3 \u2014 an agent inside", 1)[1]           # drop the starter's banner
+            return re.sub(r"HERE = .*?\n(sys.path.insert\(0, str\(HERE\)\).*?\n)?", "", src, count=1)
+        ref = (HERE / "service.py").read_text(); starter = (HERE / "starter" / "service.py").read_text()
+        self.assertEqual(strip(starter), strip(ref))
+        self.assertIn("TODO (Lab 4.3)", starter)
+
     # --- least privilege, checked statically
     def test_agent_has_no_write_tools(self):
         names = {t["name"] for t in self.service.TOOLS}
@@ -183,6 +196,31 @@ class ServiceTests(unittest.TestCase):
         self.assertIn("word", run["answer"]); self.assertIn("nothing was changed", run["answer"])
         self.assertLess(sum(1 for k, _ in ev if k == "text"), 200, "cancel must stop the stream early")
 
+    def test_cancel_takes_effect_while_the_model_is_silent(self):
+        # The worker is blocked in a socket read, waiting for bytes that are not
+        # coming. A flag checked between chunks can't reach it; aborting the stream can.
+        self.service.STREAM_STALL_S = 10
+        self.gw.stall_first = 1                       # sends a few events, then 2 s of silence
+        rid = self.start()
+        t = {}
+        def on(ev):
+            if ev[0] == "text" and "sent" not in t:
+                time.sleep(0.3)                       # let the worker block on the silent socket
+                t["sent"] = time.monotonic()
+                urllib.request.urlopen(urllib.request.Request(
+                    f"http://127.0.0.1:{self.port}/api/runs/{rid}/cancel", method="POST", data=b""))
+        ev = self.events(rid, on_event=on)
+        self.assertEqual(ev[-1][1]["status"], "cancelled")
+        self.assertLess(time.monotonic() - t["sent"], 1.0, "cancel waited for the silent stream")
+
+    def test_timeout_fires_while_the_model_is_silent(self):
+        self.service.STREAM_STALL_S, self.service.RUN_TIMEOUT_S = 10, 0.5
+        self.gw.stall_first = 1
+        t0 = time.monotonic()
+        ev = self.events(self.start())
+        self.assertEqual(ev[-1][1]["status"], "timeout")
+        self.assertLess(time.monotonic() - t0, 1.5, "the deadline waited for the silent stream")
+
     # --- wall-clock timeout
     def test_timeout_stops_a_slow_stream(self):
         self.service.RUN_TIMEOUT_S = 0.6
@@ -194,13 +232,23 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(ev[-1][1]["status"], "timeout"); self.assertTrue(ev[-1][1]["partial"])
 
     # --- budget ceiling stops the NEXT call
-    def test_budget_ceiling_stops_before_the_next_call(self):
+    def test_budget_is_a_hard_ceiling_no_call_that_could_overshoot_is_made(self):
+        # Checking "spent < limit" before a call is a soft threshold: the call
+        # itself can blow through it. The run reserves the worst case first.
         self.service.RUN_BUDGET_USD = 0.0001
-        self.gw.script = [sse_turn("Looking.", ("lookup_account", {"id": "ACC-1001"}), "tool_use"),
-                          sse_turn("should never be requested")]
+        self.gw.script = [sse_turn("should never be requested")]
         ev = self.events(self.start())
         self.assertEqual(ev[-1][1]["status"], "budget")
-        self.assertEqual(len(self.gw.requests), 1, "a second model call was made after the budget was spent")
+        self.assertEqual(len(self.gw.requests), 0, "a call was made whose worst case exceeded the budget")
+
+    def test_a_stalled_attempt_is_charged_its_reservation(self):
+        # We never see the usage of a stream that died, but the gateway may bill it.
+        self.service.RUN_BUDGET_USD = 1.0
+        self.gw.stall_first = 1
+        self.gw.script = [sse_turn("Complete answer.")]
+        ev = self.events(self.start())
+        self.assertEqual(ev[-1][1]["status"], "done")
+        self.assertGreater(ev[-1][1]["cost_usd"], 0.02, "the stalled attempt was treated as free")
 
     # --- step cap
     def test_step_limit(self):

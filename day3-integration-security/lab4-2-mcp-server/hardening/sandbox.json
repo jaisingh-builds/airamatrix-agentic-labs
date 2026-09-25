@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(~/.config/aira-ops/**)",
+      "Edit(~/.config/aira-ops/**)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "credentials": {
+      "files": [{ "path": "~/.config/aira-ops", "mode": "deny" }],
+      "envVars": [{ "name": "AIRA_OPS_TOKEN", "mode": "deny" }]
+    }
+  }
+}

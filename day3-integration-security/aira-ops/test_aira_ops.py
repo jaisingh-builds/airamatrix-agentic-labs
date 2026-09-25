@@ -9,6 +9,8 @@ from pathlib import Path
 import aira_ops
 
 TOKEN = "test-token-" + uuid.uuid4().hex[:8]
+TRIAGE = "triage-" + uuid.uuid4().hex      # per-caller tokens: scoped to ACC-1001, read-only
+ONCALL = "oncall-" + uuid.uuid4().hex      # all accounts, may write
 
 def free_port():
     s = socket.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close(); return p
@@ -22,14 +24,18 @@ class Api(unittest.TestCase):
         cls.port = free_port()
         cls.srv = ThreadingHTTPServer(("127.0.0.1", cls.port), aira_ops.Handler)
         cls.srv.db, cls.srv.token, cls.srv.latency, cls.srv.quiet = db, TOKEN, 0, True
+        cls.srv.callers = {  # what --callers loads: hashes only
+            aira_ops.sha256(TRIAGE): {"actor": "triage-agent", "accounts": ["ACC-1001"], "write": False, "verified": True},
+            aira_ops.sha256(ONCALL): {"actor": "oncall-lead", "accounts": "*", "write": True, "verified": True},
+        }
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
 
     @classmethod
     def tearDownClass(cls):
         cls.srv.shutdown(); cls.tmp.cleanup()
 
-    def call(self, method, path, body=None, token=TOKEN, key=None):
-        h = {"Content-Type": "application/json", "X-Actor": "unittest"}
+    def call(self, method, path, body=None, token=TOKEN, key=None, actor="unittest"):
+        h = {"Content-Type": "application/json", "X-Actor": actor}
         if token: h["Authorization"] = f"Bearer {token}"
         if key: h["Idempotency-Key"] = key
         data = json.dumps(body).encode() if body is not None else None
@@ -154,6 +160,74 @@ class Api(unittest.TestCase):
         self.assertIn("number", b["error"]["message"]); self.assertIn("e.g. 4", b["error"]["hint"])
         _, after = self.call("GET", "/config/ingest.max_concurrent_jobs")
         self.assertEqual((after["value"], after["version"]), (4, cur["version"]))
+
+    # idempotency keys name one operation, not "some request"
+    def test_same_key_with_a_different_payload_is_rejected_not_replayed(self):
+        k = str(uuid.uuid4())
+        s1, _ = self.call("POST", "/tickets/T-1003/comments", {"body": "first"}, key=k)
+        s2, b2 = self.call("POST", "/tickets/T-1003/comments", {"body": "second, different"}, key=k)
+        self.assertEqual(s1, 201); self.assertEqual(s2, 422)
+        self.assertIn("different request", b2["error"]["message"])
+        _, t = self.call("GET", "/tickets/T-1003")
+        self.assertEqual([c["body"] for c in t["comments"]].count("second, different"), 0)
+
+    def test_two_intentional_identical_writes_with_new_keys_both_happen(self):
+        for _ in range(2):
+            s, _ = self.call("POST", "/tickets/T-1009/comments", {"body": "Still reproducing."}, key=str(uuid.uuid4()))
+            self.assertEqual(s, 201)
+        _, t = self.call("GET", "/tickets/T-1009")
+        self.assertEqual([c["body"] for c in t["comments"]].count("Still reproducing."), 2)
+
+    # identity: the token decides who you are, not a header
+    def test_shared_token_audit_entries_are_marked_unverified(self):
+        self.call("POST", "/tickets/T-1003/comments", {"body": "label only"}, key=str(uuid.uuid4()), actor="anyone-i-like")
+        _, a = self.call("GET", "/audit")
+        top = a["entries"][0]
+        self.assertEqual((top["actor"], top["verified"]), ("anyone-i-like", 0))
+
+    def test_verified_caller_cannot_impersonate_by_changing_x_actor(self):
+        s, _ = self.call("POST", "/tickets/T-1008/comments", {"body": "SSO fix deployed"},
+                         token=ONCALL, key=str(uuid.uuid4()), actor="ceo")
+        self.assertEqual(s, 201)
+        _, t = self.call("GET", "/tickets/T-1008")
+        self.assertEqual(t["comments"][-1]["author"], "oncall-lead")
+        _, a = self.call("GET", "/audit")
+        top = a["entries"][0]
+        self.assertEqual((top["actor"], top["verified"]), ("oncall-lead", 1))
+        self.assertEqual(json.loads(top["detail"])["claimed_actor"], "ceo")
+
+    def test_scoped_caller_cannot_see_another_accounts_data(self):
+        s, b = self.call("GET", "/tickets/T-1001", token=TRIAGE)          # ACC-1001: allowed
+        self.assertEqual(s, 200)
+        s, b = self.call("GET", "/tickets/T-1007", token=TRIAGE)          # ACC-1003: hidden
+        self.assertEqual(s, 404); self.assertEqual(b["error"]["message"], "no ticket T-1007")
+        s, _ = self.call("GET", "/accounts/ACC-1003", token=TRIAGE)
+        self.assertEqual(s, 404)
+        _, lst = self.call("GET", "/tickets?status=open", token=TRIAGE)
+        self.assertEqual({t["account_id"] for t in lst["tickets"]}, {"ACC-1001"})
+        _, lst = self.call("GET", "/tickets?account_id=ACC-1003", token=TRIAGE)
+        self.assertEqual(lst["count"], 0)
+        _, jobs = self.call("GET", "/jobs", token=TRIAGE)
+        self.assertTrue(all(j["account_id"] == "ACC-1001" for j in jobs["jobs"]))
+        self.assertEqual(self.call("GET", "/audit", token=TRIAGE)[0], 403)
+
+    def test_read_only_caller_cannot_write_even_to_its_own_account(self):
+        s, b = self.call("POST", "/tickets/T-1001/comments", {"body": "x"}, token=TRIAGE, key=str(uuid.uuid4()))
+        self.assertEqual(s, 403); self.assertEqual(b["error"]["code"], "forbidden")
+
+    def test_callers_file_stores_hashes_not_tokens(self):
+        import subprocess, sys
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "callers.json"
+            out = subprocess.run([sys.executable, str(Path(aira_ops.__file__)), "--callers", str(f),
+                                  "--issue-token", "triage-agent", "--accounts", "ACC-1001"],
+                                 capture_output=True, text=True, env=dict(os.environ, AIRA_OPS_TOKEN="x"))
+            tok = out.stdout.strip()
+            self.assertEqual(len(tok), 32)
+            text = f.read_text()
+            self.assertNotIn(tok, text)
+            self.assertIn(aira_ops.sha256(tok), text)
+            self.assertEqual(aira_ops.load_callers(str(f))[aira_ops.sha256(tok)]["accounts"], ["ACC-1001"])
 
 if __name__ == "__main__":
     unittest.main()

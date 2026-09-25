@@ -103,12 +103,40 @@ class McpE2E(unittest.TestCase):
         self.assertEqual(err["code"], "not_found"); self.assertIn("search_tickets", err["hint"])
 
     # --- writes
-    def test_retried_write_is_applied_once(self):
+    def test_two_deliberate_identical_comments_are_two_operations(self):
+        # Keys come from the operation, not the arguments: saying the same thing
+        # twice on purpose is two writes, and neither is reported as a replay.
         args = {"id": "T-1003", "body": "Acknowledged - reviewer role is on the roadmap."}
         a = json.loads(text(self.c.call("add_ticket_comment", args)))
         b = json.loads(text(self.c.call("add_ticket_comment", args)))
-        self.assertTrue(b.get("_replayed"))
-        self.assertEqual(len(a["comments"]), len(b["comments"]))
+        self.assertFalse(b.get("_replayed"))
+        self.assertEqual(len(b["comments"]), len(a["comments"]) + 1)
+
+    def test_write_with_unknown_outcome_can_be_retried_safely_by_operation_id(self):
+        # A slow aira-ops: every call takes 0.8 s, the MCP server gives up at 0.3 s.
+        # The write lands anyway - exactly the ambiguous case idempotency exists for.
+        port = free_port()
+        slow = subprocess.Popen([sys.executable, str(OPS / "aira_ops.py"), "--port", str(port), "--latency", "0.8",
+                                 "--db", str(Path(self.tmp.name) / "slow.sqlite"), "--quiet"],
+                                env=dict(os.environ, AIRA_OPS_TOKEN=TOKEN), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        url = f"http://127.0.0.1:{port}"
+        for _ in range(50):
+            try: urllib.request.urlopen(url + "/health", timeout=0.2); break
+            except Exception: time.sleep(0.1)
+        impatient = McpClient(env=dict(self.env, AIRA_OPS_URL=url, AIRA_OPS_TIMEOUT_MS="300"))
+        patient = McpClient(env=dict(self.env, AIRA_OPS_URL=url, AIRA_OPS_TIMEOUT_MS="5000"))
+        try:
+            r = impatient.call("add_ticket_comment", {"id": "T-1009", "body": "Export fix is in QA."})
+            err = json.loads(text(r))["error"]
+            self.assertTrue(r["isError"]); self.assertEqual(err["code"], "outcome_unknown")
+            op = err["operation_id"]; self.assertIn(op, err["hint"])
+            time.sleep(1.0)                                    # the slow server finishes the write anyway
+            again = json.loads(text(patient.call("add_ticket_comment",
+                                                 {"id": "T-1009", "body": "Export fix is in QA.", "idempotency_key": op})))
+            self.assertTrue(again.get("_replayed"))
+            self.assertEqual([c["body"] for c in again["comments"]].count("Export fix is in QA."), 1)
+        finally:
+            impatient.close(); patient.close(); slow.terminate(); slow.wait()
 
     def test_stale_config_write_comes_back_as_a_recoverable_conflict(self):
         r = self.c.call("update_config", {"key": "alerts.ingest_latency_minutes", "value": 30, "expected_version": 42})
@@ -142,6 +170,20 @@ class McpE2E(unittest.TestCase):
             self.assertFalse(ro.call("get_config", {"key": "ingest.max_concurrent_jobs"}).get("isError"))
         finally:
             ro.close()
+
+    def test_second_client_asks_before_a_write_and_refuses_without_a_human(self):
+        # Claude Code's settings.json does not govern client.py - it needs its own gate.
+        before = json.loads(text(self.c.call("get_ticket", {"id": "T-1004"})))
+        r = subprocess.run([sys.executable, str(HERE / "client.py"), "add_ticket_comment",
+                            json.dumps({"id": "T-1004", "body": "should not land"})],
+                           env=self.env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("not approved", r.stderr)
+        after = json.loads(text(self.c.call("get_ticket", {"id": "T-1004"})))
+        self.assertEqual(len(after["comments"]), len(before["comments"]))
+        ok = subprocess.run([sys.executable, str(HERE / "client.py"), "get_ticket", json.dumps({"id": "T-1004"})],
+                            env=self.env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+        self.assertEqual(ok.returncode, 0)
 
     def test_unreachable_api_is_retryable_not_a_crash(self):
         dead = McpClient(env=dict(self.env, AIRA_OPS_URL="http://127.0.0.1:1", AIRA_OPS_TIMEOUT_MS="1500"))

@@ -11,7 +11,11 @@ python3 clinic.py --tools bad          # the baseline
 python3 clinic.py --tools bad mine     # after your rewrite, side by side
 ```
 
-## Measured on 2026-09-25 (claude-sonnet, gateway)
+## One measured run, 2026-09-25
+
+Model `claude-sonnet` via the programme gateway, default temperature, `max_tokens=800`, `MAX_STEPS=6`,
+one run per toolset over the same ten goals. It is one comparison, not a
+reliability figure: repeat paired runs before claiming more.
 
 | toolset | correct | calls / goal | tool errors | cost |
 |---|---|---|---|---|
