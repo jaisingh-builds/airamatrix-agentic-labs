@@ -71,8 +71,9 @@ suspicious and did nothing with it. `GET /audit`: zero writes.
 ## Try
 
 - Press **Cancel** half-way. The run ends `cancelled` with its partial text kept.
-- `RUN_TIMEOUT_S=5 python3 service.py` — watch a timeout end cleanly.
-- `RUN_BUDGET_USD=0.005 python3 service.py` — the budget stop.
+- `RUN_TIMEOUT_S=5 python3 starter/service.py` — watch a timeout end cleanly.
+- `RUN_BUDGET_USD=0.06 python3 starter/service.py` — the budget stop (one call fits; the next could overshoot).
+- Stop the previous server (Ctrl-C) before each one: they share port 8160.
 - Restart the service. The run history is still there — click a row to replay it.
 - Kill the service mid-run, start it again: that run now says `interrupted`,
   not `running` forever. (Found on the trainer machine: it said `running`.)

@@ -45,6 +45,18 @@ account and jobs (a `403` would confirm they exist), sees only its own
 accounts in lists, can't read `/audit`, and gets `403` on any write unless
 issued with `--write`. All tested, and each control mutation-checked.
 
+### Lab 4.4: one credential per test
+
+| Test | Credential | Expected |
+|---|---|---|
+| Cross-account: `GET /tickets/T-1007` | `triage` (ACC-1001, read-only) | 404 |
+| Write prevention: comment on T-1001 | same `triage` token | 403 `forbidden` |
+| Actor spoofing: comment on T-1001 with `X-Actor: ceo` | `oncall-lead` (ACC-1001, `--write`) | 201, author `oncall-lead`, audit `claimed_actor: "ceo"` |
+
+Use a write-enabled token for the spoofing test: with a read-only token the
+write is refused before the actor is ever recorded, and the test passes for
+the wrong reason. Verified with these exact commands on 25 Sep.
+
 ## The data has a story in it
 
 `T-1001` (ingest backlog) is caused by `ingest.max_concurrent_jobs`, cut from 16
