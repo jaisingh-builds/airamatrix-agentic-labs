@@ -117,11 +117,11 @@ jobs:
       code: ${{ steps.review.outputs.code }}
     if: github.event_name == 'pull_request' && needs.changes.outputs.day4 == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20              # headroom over review.py --timeout 600 plus checkout/setup/npm install
     env:
       ANTHROPIC_BASE_URL: ${{ secrets.LAB_GATEWAY_URL }}
       ANTHROPIC_AUTH_TOKEN: ${{ secrets.LAB_GATEWAY_KEY }}
-      REVIEW_BUDGET_USD: "0.50"
+      REVIEW_BUDGET_USD: "1.50"       # dense ~50 KB diffs (the Java track) ran out at 0.50; a typical review costs ~0.40
     steps:
       - name: Gateway secret present?
         run: |
@@ -151,7 +151,7 @@ jobs:
             echo "::notice::the base branch has no reviewer yet (bootstrap PR) - not reviewed"; exit 0
           fi
           set +e
-          python3 "$REVIEWER" --repo pr --base "origin/$BASE_REF" --head HEAD --out review-out
+          python3 "$REVIEWER" --repo pr --base "origin/$BASE_REF" --head HEAD --out review-out --timeout 600
           code=$?
           echo "$code" > review-out/exit-code
           echo "code=$code" >> "$GITHUB_OUTPUT"
