@@ -1,0 +1,9 @@
+# AgentCore state (account ids, ARNs), the deployment package, run stores and caller files - never committed
+out/
+*.sqlite
+capstone-callers.json
+# AgentCore mode dependencies: `npm install` in agentcore/ and agentcore/runtime/ (local mode needs none)
+node_modules/
+package-lock.json
+# the repo ignores traces/ everywhere; these sample traces from real runs are part of the hand-over
+!samples/traces/
