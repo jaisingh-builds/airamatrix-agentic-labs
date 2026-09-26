@@ -1,0 +1,96 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "diagnosis",
+    "evidence",
+    "confidence",
+    "proposed_change"
+  ],
+  "properties": {
+    "diagnosis": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 2000,
+      "description": "At most 5 sentences."
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "description": "Required. 3-6 items, each naming its source (ticket id, or config key and value).",
+      "items": {
+        "type": "string",
+        "maxLength": 400
+      }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "risks": {
+      "type": "array",
+      "maxItems": 6,
+      "description": "At most 6 short items.",
+      "items": {
+        "type": "string",
+        "maxLength": 300
+      }
+    },
+    "proposed_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "update_config",
+            "add_ticket_comment",
+            "none"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "enum": [
+            "ingest.max_concurrent_jobs",
+            "ingest.rush_slide_limit",
+            "alerts.ingest_latency_minutes",
+            "viewer.overlay_calibration_um"
+          ]
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ticket_id": {
+          "type": "string",
+          "pattern": "^T-\\d{4}$"
+        },
+        "comment": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      }
+    }
+  }
+}
