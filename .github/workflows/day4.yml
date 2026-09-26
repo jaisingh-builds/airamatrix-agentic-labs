@@ -117,7 +117,7 @@ jobs:
       code: ${{ steps.review.outputs.code }}
     if: github.event_name == 'pull_request' && needs.changes.outputs.day4 == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20              # headroom over review.py --timeout 600 plus checkout/setup/npm install
     env:
       ANTHROPIC_BASE_URL: ${{ secrets.LAB_GATEWAY_URL }}
       ANTHROPIC_AUTH_TOKEN: ${{ secrets.LAB_GATEWAY_KEY }}
