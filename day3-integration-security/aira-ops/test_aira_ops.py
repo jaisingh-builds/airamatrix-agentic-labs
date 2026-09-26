@@ -178,6 +178,16 @@ class Api(unittest.TestCase):
         _, t = self.call("GET", "/tickets/T-1009")
         self.assertEqual([c["body"] for c in t["comments"]].count("Still reproducing."), 2)
 
+    def test_comment_field_is_accepted_as_well_as_body(self):
+        # AgentCore Gateway treats an OpenAPI property named "body" as the whole request body,
+        # so the Day 4 gateway spec sends "comment". Both must land as the comment text.
+        s, _ = self.call("POST", "/tickets/T-1006/comments", {"comment": "via gateway"}, key=str(uuid.uuid4()))
+        self.assertEqual(s, 201)
+        _, t = self.call("GET", "/tickets/T-1006")
+        self.assertEqual(t["comments"][-1]["body"], "via gateway")
+        s, _ = self.call("POST", "/tickets/T-1006/comments", {"comment": "  "}, key=str(uuid.uuid4()))
+        self.assertEqual(s, 400)
+
     # identity: the token decides who you are, not a header
     def test_shared_token_audit_entries_are_marked_unverified(self):
         self.call("POST", "/tickets/T-1003/comments", {"body": "label only"}, key=str(uuid.uuid4()), actor="anyone-i-like")

@@ -1,0 +1,2 @@
+# Local tools for the deploy scripts (the agents' own dependencies are in 06-agents/agent/requirements.txt)
+boto3>=1.43

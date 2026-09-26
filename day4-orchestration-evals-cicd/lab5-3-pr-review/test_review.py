@@ -157,7 +157,7 @@ class ReviewTests(unittest.TestCase):
 
     def test_an_unquoted_token_assignment_is_a_blocker_and_is_masked(self):
         # the course's own token format, exactly as a shell line would carry it
-        hexed = "910665cfcda086dfefb519136f1fe5ed"
+        hexed = "5f0e3c7a9b2d4e6f8a1c3e5d7b9f0a2c"
         (self.tmp / "change.patch").write_text(textwrap.dedent(f'''\
             diff --git a/run.sh b/run.sh
             --- a/run.sh
