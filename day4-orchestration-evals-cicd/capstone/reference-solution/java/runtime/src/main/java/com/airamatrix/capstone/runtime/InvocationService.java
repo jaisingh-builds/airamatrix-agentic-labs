@@ -77,9 +77,10 @@ public class InvocationService {
         ArrayNode trace = out.putArray("trace");
         try {
             for (String line : Files.readAllLines(tr.path)) if (!line.isBlank()) trace.add(Contracts.JSON.readTree(line));
-            Files.deleteIfExists(tr.path);
         } catch (Exception e) {
             out.put("trace_error", e.getClass().getSimpleName());
+        } finally {
+            try { Files.deleteIfExists(tr.path); } catch (Exception ignored) { /* best effort, the container is disposable */ }
         }
         return out;
     }

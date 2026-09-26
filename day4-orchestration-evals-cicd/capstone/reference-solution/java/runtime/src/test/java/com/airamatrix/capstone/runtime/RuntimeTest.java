@@ -104,8 +104,21 @@ class RuntimeTest {
     }
 
     @Test
+    void aCachedGatewayTokenIsNeverReusedForAnotherOrAMissingWorkloadToken() {
+        java.util.concurrent.atomic.AtomicInteger exchanges = new java.util.concurrent.atomic.AtomicInteger();
+        IdentityTokens id = new IdentityTokens(req -> software.amazon.awssdk.services.bedrockagentcore.model.GetResourceOauth2TokenResponse
+                .builder().accessToken("gw-for-" + req.workloadIdentityToken()).build(), "p", List.of("s")) {
+            @Override public synchronized String gatewayToken(String wat) { exchanges.incrementAndGet(); return super.gatewayToken(wat); }
+        };
+        assertEquals("gw-for-caller-a", id.gatewayToken("caller-a"));
+        assertEquals("gw-for-caller-a", id.gatewayToken("caller-a"), "same caller: cached");
+        assertEquals("gw-for-caller-b", id.gatewayToken("caller-b"), "another caller never gets caller A's token");
+        assertThrows(IllegalStateException.class, () -> id.gatewayToken(null), "no token: refused even with a warm cache");
+    }
+
+    @Test
     void noWorkloadTokenIsAClearError() {
-        IdentityTokens id = new IdentityTokens(null, "p", List.of("s"));
+        IdentityTokens id = new IdentityTokens((software.amazon.awssdk.services.bedrockagentcore.BedrockAgentCoreClient) null, "p", List.of("s"));
         IllegalStateException e = assertThrows(IllegalStateException.class, () -> id.gatewayToken(null));
         assertTrue(e.getMessage().contains("runtimeUserId"));
     }
@@ -113,7 +126,7 @@ class RuntimeTest {
     // ------------------------------------------------------------------ helpers
 
     static InvocationService service(java.util.function.Function<ConverseRequest, ConverseResponse> converse) {
-        IdentityTokens identity = new IdentityTokens(null, "p", List.of("s")) {
+        IdentityTokens identity = new IdentityTokens((software.amazon.awssdk.services.bedrockagentcore.BedrockAgentCoreClient) null, "p", List.of("s")) {
             @Override public synchronized String gatewayToken(String wat) { return "wat-secret-token"; }
         };
         return new InvocationService(SETTINGS, identity, (url, token) -> {

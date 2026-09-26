@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
+import io.modelcontextprotocol.spec.McpError;
 import io.modelcontextprotocol.spec.McpSchema;
 
 /**
@@ -44,8 +45,10 @@ public final class GatewayOpsReader implements OpsReader, AutoCloseable {
         McpSchema.CallToolResult r;
         try {
             r = client.callTool(new McpSchema.CallToolRequest(P + tool, args));
-        } catch (Exception e) {       // a Cedar denial arrives as a JSON-RPC error
+        } catch (McpError e) {        // a Cedar denial arrives as a JSON-RPC error
             throw new OpsError(403, "denied", "gateway refused " + P + tool + ": " + String.valueOf(e.getMessage()));
+        } catch (Exception e) {       // timeouts, resets, protocol errors: not an access decision (PR review)
+            throw new OpsError(0, "unavailable", "gateway call " + P + tool + " failed: " + e.getClass().getSimpleName());
         }
         String text = r.content() == null ? "" : r.content().stream()
                 .map(c -> c instanceof McpSchema.TextContent tc ? tc.text() : "").collect(Collectors.joining());
