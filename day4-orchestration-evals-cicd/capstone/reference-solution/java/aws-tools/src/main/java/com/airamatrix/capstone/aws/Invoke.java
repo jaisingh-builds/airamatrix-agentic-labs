@@ -84,7 +84,7 @@ public final class Invoke {
                 out.put("seconds", Math.round((System.nanoTime() - t0) / 1e8) / 10.0);
                 String st = r.path("status").asText();
                 if (st.equals("failed") || st.equals("guardrail_intervened") || r.has("error") && !r.has("proposal")) {
-                    return Contracts.object().put("error", r.path("error").asText(st)).put("cost_usd", r.path("cost_usd").asDouble());
+                    return Contracts.object().put("error", r.path("error").asText(st)).put("status", st).put("cost_usd", r.path("cost_usd").asDouble());
                 }
                 return out;
             } catch (Exception e) {
