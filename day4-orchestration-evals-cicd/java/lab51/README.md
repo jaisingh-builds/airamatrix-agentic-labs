@@ -251,7 +251,7 @@ modes:
 
 | Start | Port | Holds | Can | Refuses |
 |---|---|---|---|---|
-| `lab51 serve` | 8170 | `AIRA_OPS_READ_TOKEN` | create runs (stages run **synchronously**: the request returns when the run reaches the gate, typically 30–90 s live), resume, replay, show, approve/reject | `apply` (403). It also refuses to *start* if `AIRA_OPS_APPLY_TOKEN` or `AIRA_OPS_TOKEN` is set. |
+| `lab51 serve` | 8170 | `AIRA_OPS_READ_TOKEN` | create runs (stages run **synchronously**: the request returns when the run reaches the gate, typically 1–3 minutes live, so give your HTTP client a long timeout), resume, replay, show, approve/reject | `apply` (403). It also refuses to *start* if `AIRA_OPS_APPLY_TOKEN` or `AIRA_OPS_TOKEN` is set. |
 | `lab51 serve --apply` | 8171 | `AIRA_OPS_APPLY_TOKEN` | show, approve/reject, **apply** | anything that starts a stage (403). It refuses to start without the apply token. |
 
 Both servers bind to `127.0.0.1` only, and `--port N` overrides the default. There is no authentication:
