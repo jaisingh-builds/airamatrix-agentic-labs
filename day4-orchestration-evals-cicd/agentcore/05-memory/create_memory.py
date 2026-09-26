@@ -33,7 +33,7 @@ if not mid:
         mid = ac.create_memory(name=name, eventExpiryDuration=30,
                                description="Supervisor memory for the Day 4 AgentCore reference system",
                                memoryStrategies=STRATEGIES)["memory"]["id"]
-say("memory  ", mid, "(creating - takes 1-3 minutes)")
+say("memory  ", mid, "(waiting for ACTIVE - 1-3 minutes when new)")
 m = wait(lambda: ac.get_memory(memoryId=mid)["memory"], ok=("ACTIVE",), what="memory", pause=10)
 arn = m["arn"]
 strategies = {s["name"]: s["strategyId"] for s in m.get("strategies", [])}

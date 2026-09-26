@@ -31,7 +31,8 @@ You see the three agents' spans nested, every gateway tool call, every model cal
 
 ## 3. Memory across sessions
 
-Wait a minute (long-term extraction is asynchronous), then ask in a **new** session:
+Wait **about 2 minutes** (long-term extraction is asynchronous; ask sooner and it may re-read the ticket
+instead), then ask in a **new** session:
 
 ```bash
 PYTHONPATH=.. python invoke.py supervisor "What did we find and decide about T-1001 earlier? Answer from memory, briefly."
