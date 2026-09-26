@@ -1,0 +1,9 @@
+# what capstone_aws.py created (ids, ARNs) and its build - never committed
+out/
+# local run state
+capstone-runs.sqlite
+capstone-callers.json
+capstone-ops.sqlite
+# the repo root ignores traces/ - these are the sample traces from real runs, committed on purpose
+!samples/traces/
+!samples/traces/*.jsonl
