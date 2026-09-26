@@ -1,0 +1,14 @@
+{
+  "name": "aira-capstone-node-runtime",
+  "private": true,
+  "type": "module",
+  "description": "What the AgentCore Runtime (NODE_22, direct code deploy) runs. deploy installs these for the zip.",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agentcore": "3.1141.0",
+    "@aws-sdk/client-bedrock-runtime": "3.1141.0",
+    "@aws/aws-distro-opentelemetry-node-autoinstrumentation": "0.13.0",
+    "@modelcontextprotocol/sdk": "1.30.1",
+    "@opentelemetry/api": "1.9.1"
+  }
+}
