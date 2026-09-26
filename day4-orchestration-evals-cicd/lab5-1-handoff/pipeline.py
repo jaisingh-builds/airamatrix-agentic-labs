@@ -18,7 +18,7 @@ Credentials, least privilege:
     AIRA_OPS_APPLY_TOKEN  the apply step's token: may write. No agent ever sees it.
     (python3 pipeline.py tokens --account ACC-1001 issues both into aira-ops' callers.json)
 """
-import argparse, json, os, subprocess, sys, urllib.error, urllib.request, uuid
+import argparse, json, os, subprocess, sys, time, urllib.error, urllib.request, uuid
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -140,7 +140,12 @@ def apply(store, rid, write_token, ops_url=OPS_URL, tracer=None):
         return store.run(rid)
     method, path, body = request_for(change)
     with tracer.span("apply", action=change["action"], op_id=op["op_id"], approver=a["approver"]) as sp:
-        status, resp = http(method, ops_url + path, body, write_token, op["op_id"])
+        for attempt in range(3):                       # ride out transient 5xx/timeouts instead of stopping
+            key = f"{op['op_id']}-{attempt}"            # unique key per attempt
+            status, resp = http(method, ops_url + path, body, write_token, key)
+            if status and status < 500:
+                break
+            time.sleep(0.5 * (attempt + 1))
         sp.set(http_status=status, replayed=bool(isinstance(resp, dict) and resp.get("_replayed")))
         if status in (200, 201):
             store.operation_result(rid, "done", resp); store.set_status(rid, "applied")
