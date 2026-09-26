@@ -54,7 +54,9 @@ ls day4-orchestration-evals-cicd/java/lab53/target/lab53.jar
 For the rest of this page:
 
 ```bash
-LAB53="java -jar day4-orchestration-evals-cicd/java/lab53/target/lab53.jar"
+# macOS / Linux (bash, zsh) - from the repo root. A function, not LAB53="java -jar ...": zsh does not
+# split "lab53" into words and says "no such file or directory: java -jar ...".
+lab53() { java -jar day4-orchestration-evals-cicd/java/lab53/target/lab53.jar "$@"; }
 ```
 
 ```powershell
@@ -62,7 +64,7 @@ LAB53="java -jar day4-orchestration-evals-cicd/java/lab53/target/lab53.jar"
 function lab53 { java -jar day4-orchestration-evals-cicd\java\lab53\target\lab53.jar @args }
 ```
 
-(In PowerShell use `lab53 ...` wherever this page says `$LAB53 ...`.)
+Both shells now have a `lab53` command, so every `lab53 ...` line below works in either.
 
 ## 3. Run the tests (offline, no cost)
 
@@ -70,7 +72,7 @@ function lab53 { java -jar day4-orchestration-evals-cicd\java\lab53\target\lab53
 mvn -q -pl day4-orchestration-evals-cicd/java/lab53 -am test
 ```
 
-Expected: no output (quiet mode) and exit 0. The report says **30 tests pass, 1 skipped** — the
+Expected: no output (quiet mode) and exit 0. The report says **33 tests pass, 1 skipped** (32 in `ReviewTest`, 2 in `DemoPrsTest`) — the
 skipped one is the live test, which only runs with `LAB_LIVE=1` and costs money:
 
 ```bash
@@ -93,7 +95,7 @@ is never touched. `demo-prs` is the Java port of `demo_prs.py` — same edits, s
 
 ```bash
 git worktree add /tmp/d4wt day4          # use your Day 4 branch (e.g. main) if there is no `day4`
-$LAB53 demo-prs --base day4 --worktree /tmp/d4wt
+lab53 demo-prs --base day4 --worktree /tmp/d4wt
 ```
 
 ```powershell
@@ -113,6 +115,9 @@ demo/prompt-shortcut         investigate prompt: shorter, fewer tokens per run
 
 Errors you may see: `/tmp/d4wt is not a worktree: git worktree add /tmp/d4wt day4` (run the
 `git worktree add` first) or `... has uncommitted changes - commit or stash them first`.
+`fatal: 'main' is already checked out at ...` from `git worktree add`: git will not check one branch out
+twice, and your own clone is on it. Give the worktree a branch of its own and use that as the base:
+`git worktree add -b d4base /tmp/d4wt main`, then `--base d4base` in every command on this page.
 Re-running is safe: branches are recreated with `git switch -C`.
 
 (The Python script works too and builds identical branches: `python3 day4-orchestration-evals-cicd/lab5-3-pr-review/demo_prs.py --base day4 --worktree /tmp/d4wt`.)
@@ -120,7 +125,7 @@ Re-running is safe: branches are recreated with `git switch -C`.
 ### 4.2 Dry run first — everything except the model call (free, no key needed)
 
 ```bash
-$LAB53 --repo /tmp/d4wt --base day4 --head demo/workshop-env --dry-run --out /tmp/rv/w
+lab53 --repo /tmp/d4wt --base day4 --head demo/workshop-env --dry-run --out /tmp/rv/w
 echo "exit=$?"
 ```
 
@@ -152,7 +157,7 @@ context, which is added only on a real run). Search it for `apply-3f9c` — it i
 
 ```bash
 for b in trace-errors-only apply-retry drop-approval-check workshop-env; do
-  $LAB53 --repo /tmp/d4wt --base day4 --head demo/$b --out /tmp/rv/$b > /dev/null
+  lab53 --repo /tmp/d4wt --base day4 --head demo/$b --out /tmp/rv/$b > /dev/null
   echo "demo/$b exit=$?"
 done
 ```
@@ -184,9 +189,9 @@ or may not.
 ### 4.4 Other ways to run it
 
 ```bash
-$LAB53 --diff change.patch                          # review a patch file (git diff > change.patch)
-$LAB53 --base origin/main --head HEAD --out review-out
-$LAB53 --help
+lab53 --diff change.patch                          # review a patch file (git diff > change.patch)
+lab53 --base origin/main --head HEAD --out review-out
+lab53 --help
 ```
 
 Flags (same as `review.py`): `--base`, `--head` (default `HEAD`), `--diff`, `--repo` (default: the
@@ -198,11 +203,11 @@ repo root), `--out` (default `out`), `--budget` (default `$REVIEW_BUDGET_USD` or
 Fail-closed examples:
 
 ```
-$ REVIEW_MAX_DIFF_BYTES=200 $LAB53 --diff change.patch
+$ REVIEW_MAX_DIFF_BYTES=200 lab53 --diff change.patch
 review failed: RuntimeError: diff is 609 bytes (cap 200) - too large for automated review; needs a human (or split the PR)
 exit 1
 
-$ $LAB53 --base day4 --head demo/apply-retry --repo /tmp/d4wt     # no ANTHROPIC_* and no .env found
+$ lab53 --base day4 --head demo/apply-retry --repo /tmp/d4wt     # no ANTHROPIC_* and no .env found
 review failed: IllegalStateException: Missing: ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN
 Copy .env.example to .env and paste the gateway URL and your key.
 See setup/05-verify.md.

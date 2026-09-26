@@ -375,6 +375,25 @@ class ReviewTest {
     }
 
     @Test
+    void theSchemaLimitsAreStatedInTheInstructionAndInTheRetryFeedback() throws Exception {
+        // Live, 26 Sep: a 746-character "why" was sent twice ("length 746 outside limits") and the review failed.
+        assertEquals("summary at most 600 characters; at most 15 findings; title at most 120 characters; "
+                + "evidence at most 300 characters; why at most 600 characters; suggestion at most 600 characters",
+                Review.LIMITS);
+        Files.writeString(tmp.resolve("change.patch"), DIFF_NO_SECRET);
+        String longWhy = "x".repeat(746);
+        model.add(submit("{\"summary\": \"x\", \"findings\": [{\"severity\": \"major\", \"file\": \"a.py\", \"line\": 1, "
+                + "\"title\": \"t\", \"evidence\": \"e\", \"why\": \"" + longWhy + "\"}]}")).add(reply(GOOD_FINDING));
+        assertEquals(2, run(), stderr.toString());
+        JsonNode first = Contracts.JSON.readTree(model.requests.get(0));
+        assertTrue(first.path("system").asText().contains("why at most 600 characters"));
+        JsonNode second = Contracts.JSON.readTree(model.requests.get(1)).path("messages");
+        String feedback = second.get(second.size() - 1).path("content").get(0).path("content").asText();
+        assertTrue(feedback.startsWith("contract error: $.findings[0].why: length 746 outside limits"), feedback);
+        assertTrue(feedback.endsWith("Limits: " + Review.LIMITS + "."), feedback);
+    }
+
+    @Test
     void aContractErrorTwiceIsExit1() throws Exception {
         model.add(submit("{\"findings\": []}")).add(submit("{\"findings\": []}"));
         assertEquals(1, run());
