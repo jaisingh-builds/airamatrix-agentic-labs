@@ -41,11 +41,11 @@ You need JDK 21, Maven 3.9, Python 3 (only to run aira-ops) and the repo's `.env
 From the **repo root**:
 
 ```bash
-mvn -q -f day4-orchestration-evals-cicd/capstone/reference-solution/java/pom.xml package        # builds + 38 offline tests
+mvn -q -f day4-orchestration-evals-cicd/capstone/reference-solution/java/pom.xml package        # builds + 39 offline tests
 ```
 
 ```
-Tests run: 28 ... CapstoneTest        (core: SLA numbers, tools, loop limits, every guardrail rule, gate, apply, evals, CLI)
+Tests run: 29 ... CapstoneTest        (core: SLA numbers, tools, loop limits, every guardrail rule, gate, apply, evals, CLI)
 Tests run: 6  ... RuntimeTest         (Converse translation + guardrail config, HTTP contract, one invocation)
 Tests run: 4  ... AwsToolsTest        (names, IAM policy, runtime environment, recording an AgentCore run)
 ```
