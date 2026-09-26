@@ -139,13 +139,17 @@ public final class ResponderAgent {
                 JsonNode input = block.path("input");
                 ObjectNode r = results.addObject().put("type", "tool_result").put("tool_use_id", block.path("id").asText());
                 if (name.equals(Tools.SUBMIT)) {
-                    // Found live: after "missing ['evidence']" the model often resends ONLY the missing key. A fix-up is
-                    // merged onto the previous submission (top-level keys, the new value wins) and validated in full -
-                    // transport, not trust: the merged proposal still passes the contract and the guardrail or nothing.
+                    // Found live: after "missing ['evidence']" the model often resends ONLY the missing key. A fix-up takes
+                    // from the previous submission ONLY the required top-level keys the new one leaves out - never a key the
+                    // schema does not allow (found live in the Node build: a merge that carried everything forward kept an
+                    // unexpected key alive through three correct resubmissions). Then it is validated in full - transport,
+                    // not trust: the merged proposal still passes the contract and the guardrail, or nothing does.
                     JsonNode candidate = input;
                     if (previous != null && input.isObject()) {
-                        ObjectNode merged = previous.deepCopy();
-                        input.fields().forEachRemaining(f -> merged.set(f.getKey(), f.getValue()));
+                        ObjectNode merged = ((ObjectNode) input).deepCopy();
+                        for (JsonNode k : schema.path("required")) {
+                            if (!merged.has(k.asText()) && previous.has(k.asText())) merged.set(k.asText(), previous.get(k.asText()));
+                        }
                         candidate = merged;
                     }
                     final JsonNode checked = candidate;
