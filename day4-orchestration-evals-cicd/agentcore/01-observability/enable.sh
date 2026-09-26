@@ -4,11 +4,13 @@
 set -euo pipefail
 R="${AWS_REGION:-ap-south-1}"
 ACC="$(aws sts get-caller-identity --query Account --output text)"
-# Let X-Ray write spans into CloudWatch Logs. (zsh users: always ${ACC}, never $ACC: - zsh eats ":l".)
+# Let X-Ray write spans into CloudWatch Logs: the shared aws/spans group, and each runtime's own log group
+# (unified telemetry - the Java agents route their spans there explicitly). (zsh users: always ${ACC}, never $ACC: - zsh eats ":l".)
 aws logs put-resource-policy --region "$R" --policy-name AgentCoreTransactionSearch --policy-document "{
   \"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TransactionSearchXRayAccess\",\"Effect\":\"Allow\",
   \"Principal\":{\"Service\":\"xray.amazonaws.com\"},\"Action\":\"logs:PutLogEvents\",
-  \"Resource\":[\"arn:aws:logs:${R}:${ACC}:log-group:aws/spans:*\",\"arn:aws:logs:${R}:${ACC}:log-group:/aws/application-signals/data:*\"],
+  \"Resource\":[\"arn:aws:logs:${R}:${ACC}:log-group:aws/spans:*\",\"arn:aws:logs:${R}:${ACC}:log-group:/aws/application-signals/data:*\",
+    \"arn:aws:logs:${R}:${ACC}:log-group:/aws/bedrock-agentcore/runtimes/*:*\"],
   \"Condition\":{\"StringEquals\":{\"aws:SourceAccount\":\"${ACC}\"}}}]}" > /dev/null
 # The resource policy takes a few seconds to apply; retry until X-Ray accepts it.
 for i in $(seq 1 18); do
