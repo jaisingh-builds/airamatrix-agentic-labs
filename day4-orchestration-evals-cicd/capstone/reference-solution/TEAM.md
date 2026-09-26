@@ -55,8 +55,9 @@ the T-1002 overlay breach, and an unverified claim in the request (Lab 5.1 run 1
 Checks: outcome (status, action, ticket, exposed items, comment content, guardrail passed) + trajectory (first call,
 reads, no successful cross-tenant read, max tool calls); 9 are critical.
 Result (local, final code): **14/14 passed over 7 cases x 2 runs, first attempt 13/14, cost $0.55** (`java/results/`).
-Four iterations, each driven by a trace, took first-attempt from 12 to 13 of 14. AgentCore: 6/7, gate FAIL on a
-Bedrock Guardrail false positive (see What we'd do next).
+Four iterations, each driven by a trace, took first-attempt from 12 to 13 of 14. AgentCore: 7/7 with one run
+accepted as a guardrail refusal - the shared Bedrock Guardrail's false positive on the injection case, counted
+separately so it stays visible (see What we'd do next).
 
 ## Trace
 File: `java/samples/agentcore-contract-float-bug.jsonl`. The first AgentCore run failed with
