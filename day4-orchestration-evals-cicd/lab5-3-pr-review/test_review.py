@@ -215,6 +215,18 @@ class ReviewTests(unittest.TestCase):
             self.assertNotIn(secret, sent)
         self.assertFalse(os.path.exists(ws["cwd"]), "the temporary directory was not cleaned up")
 
+    def test_a_failed_archive_inside_a_repo_is_an_error_not_a_copy_of_the_working_tree(self):
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d) / "repo"; repo.mkdir(); (repo / "app.py").write_text("x = 1\n")
+            git = lambda *a: subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True)
+            git("init", "-q", "-b", "main"); git("add", "-A")
+            git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
+            with self.assertRaisesRegex(RuntimeError, "git archive no-such-rev failed"):
+                review.sanitized_workspace(repo, "no-such-rev")
+            plain = Path(d) / "plain"; plain.mkdir(); (plain / "app.py").write_text("x = 1\n")
+            ws = review.sanitized_workspace(plain, "HEAD")[0]           # not a repo: a plain copy is right
+            self.assertEqual((ws / "app.py").read_text(), "x = 1\n")
+
     def test_starter_differs_from_the_reference_only_inside_the_todo_blocks(self):
         import re
         def strip(src):

@@ -1,0 +1,2 @@
+# eval-*.json and judge-calibration.json from live runs (kept locally for --regrade)
+results/

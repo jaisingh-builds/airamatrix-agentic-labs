@@ -161,15 +161,28 @@ def redact_diff(diff):
 # ------------------------------------------------------------------ the workspace the model may read
 DROP_FILES = re.compile(r"(^|/)(\.env[^/]*|[^/]*\.(pem|key|p12|pfx)|[^/]*credentials[^/]*|\.npmrc|\.pypirc)$", re.I)
 
+def _is_git_repo(repo):
+    try:
+        return subprocess.run(["git", "rev-parse", "--git-dir"], cwd=repo, capture_output=True).returncode == 0
+    except FileNotFoundError:                                        # git is not installed
+        return False
+
+
 def sanitized_workspace(repo, rev):
     """A copy of the tree at `rev`: no .git, no secret-bearing files, every secret pattern masked in
     every text file. The model's context (the changed files' full text) is read from HERE, never from
     the raw checkout."""
     out = Path(tempfile.mkdtemp(prefix="review-ws-"))
-    try:
-        blob = subprocess.run(["git", "archive", "--format=tar", rev], cwd=repo, capture_output=True, check=True).stdout
-        tarfile.open(fileobj=io.BytesIO(blob)).extractall(out, filter="data")
-    except (subprocess.CalledProcessError, FileNotFoundError):       # not a git repo: copy the tree
+    if _is_git_repo(repo):
+        # Inside a repository a failed archive (bad rev, broken repo) is an error: falling back to a copy of
+        # the working tree would review something other than `rev` and still return a normal verdict.
+        r = subprocess.run(["git", "archive", "--format=tar", rev], cwd=repo, capture_output=True)
+        if r.returncode != 0:
+            shutil.rmtree(out, ignore_errors=True)
+            raise RuntimeError(f"git archive {rev} failed (exit {r.returncode}): "
+                               f"{r.stderr.decode(errors='replace').strip()[:300]}")
+        tarfile.open(fileobj=io.BytesIO(r.stdout)).extractall(out, filter="data")
+    else:                                                            # git missing, or not a repo: copy the tree
         shutil.copytree(repo, out, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git"))
     masked = dropped = 0
     for f in sorted(p for p in out.rglob("*") if p.is_file()):
