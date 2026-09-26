@@ -81,18 +81,21 @@ public final class Evals {
                 jobs.add(pool.submit(() -> {
                     synchronized (spent) { if (spent[0] > budget) return; }
                     ObjectNode r = runner.run(c);
+                    if (acceptedRefusal(c, r)) r = accept(r, c);
                     if (r.has("error")) {                                  // an ERROR is retried once; a FAIL never is
                         synchronized (spent) { spent[0] += r.path("cost_usd").asDouble(); }
                         out.printf("  RETRY %-26s after: %s%n", c.path("id").asText(), Tools.cut(r.path("error").asText(), 70));
                         ObjectNode again = runner.run(c);
+                        if (acceptedRefusal(c, again)) again = accept(again, c);
                         again.put("retried_after", Tools.cut(r.path("error").asText(), 200)).put("errored_cost_usd", r.path("cost_usd").asDouble());
                         r = again;
                     }
-                    if (!r.has("error")) r.set("grade", Checks.gradeCase(c, r));
+                    if (!r.has("error") && !r.has("grade")) r.set("grade", Checks.gradeCase(c, r));
                     synchronized (spent) {
                         spent[0] += r.path("cost_usd").asDouble();
                         ((ArrayNode) byId.get(c.path("id").asText()).get("runs")).add(r);
-                        String st = r.has("error") ? "ERROR" : r.path("grade").path("passed").asBoolean() ? "PASS" : "FAIL";
+                        String st = r.has("error") ? "ERROR" : r.path("grade").path("accepted_refusal").asBoolean() ? "PASS*"
+                                : r.path("grade").path("passed").asBoolean() ? "PASS" : "FAIL";
                         out.printf("  %-5s %-26s $%.3f  %s%n", st, c.path("id").asText(), r.path("cost_usd").asDouble(), r.path("status").asText(""));
                     }
                 }));
@@ -123,6 +126,23 @@ public final class Evals {
         return gate.path("ok").asBoolean() ? 0 : 1;
     }
 
+    /** The case accepts this run's refusal: {"accept_refusal": {"status": "guardrail_intervened"}} and the run stopped that way. */
+    static boolean acceptedRefusal(JsonNode kase, JsonNode r) {
+        String want = kase.path("accept_refusal").path("status").asText("");
+        if (want.isEmpty()) return false;
+        return want.equals(r.path("status").asText()) || r.path("error").asText("").startsWith(want + ":");
+    }
+
+    /** A refusal the case accepts: passed, graded without checks, and marked so the report can count it separately. */
+    static ObjectNode accept(ObjectNode r, JsonNode kase) {
+        ObjectNode out = r.deepCopy();
+        String why = out.has("error") ? out.remove("error").asText() : out.path("status").asText();
+        out.put("status", kase.path("accept_refusal").path("status").asText()).put("refusal", why);
+        ObjectNode g = out.putObject("grade").put("passed", true).put("accepted_refusal", true);
+        g.putArray("checks");
+        return out;
+    }
+
     /** Re-grade a saved results file with the current golden checks: no model, no cost. */
     public static int regrade(JsonNode golden, Path saved, PrintStream out) throws Exception {
         JsonNode prev = Contracts.JSON.readTree(saved.toFile());
@@ -136,7 +156,8 @@ public final class Evals {
             ArrayNode runs = cc.putArray("runs");
             for (JsonNode r : c.path("runs")) {
                 ObjectNode rr = ((ObjectNode) r).deepCopy();
-                if (!rr.has("error")) rr.set("grade", Checks.gradeCase(kase, rr));
+                if (acceptedRefusal(kase, rr)) rr = accept(rr, kase);
+                else if (!rr.has("error")) rr.set("grade", Checks.gradeCase(kase, rr));
                 runs.add(rr);
             }
             results.add(cc);
@@ -156,15 +177,18 @@ public final class Evals {
         sb.append("## Eval gate: ").append(g.path("ok").asBoolean() ? "PASS" : "FAIL").append(" - ").append(doc.path("suite").asText())
           .append(" (target: ").append(doc.path("target").asText()).append(")\n\n");
         sb.append(String.format("%d/%d runs passed (%.0f%%, need %.0f%%) · first attempt %d/%d · %d retried after an error · "
-                        + "%d unrecovered errors · $%.2f%n%n", g.path("passed").asInt(), g.path("runs").asInt(), 100 * g.path("pass_rate").asDouble(),
+                        + "%d unrecovered errors%s · $%.2f%n%n", g.path("passed").asInt(), g.path("runs").asInt(), 100 * g.path("pass_rate").asDouble(),
                 100 * g.path("min_pass_rate").asDouble(), g.path("first_attempt_passed").asInt(), g.path("runs").asInt(),
-                g.path("retried").asInt(), g.path("unrecovered_errors").asInt(), doc.path("cost_usd").asDouble()));
+                g.path("retried").asInt(), g.path("unrecovered_errors").asInt(),
+                g.path("accepted_refusals").asInt() > 0 ? " · " + g.path("accepted_refusals").asInt() + " accepted as a guardrail refusal" : "",
+                doc.path("cost_usd").asDouble()));
         sb.append("| case | runs passed | failing checks |\n|---|---|---|\n");
         for (JsonNode c : doc.path("cases")) {
             int ok = 0, n = c.path("runs").size();
             TreeSet<String> fails = new TreeSet<>();
             for (JsonNode r : c.path("runs")) {
                 if (r.has("error")) { fails.add("error: " + Tools.cut(r.path("error").asText(), 80)); continue; }
+                if (r.path("grade").path("accepted_refusal").asBoolean()) fails.add("accepted refusal: " + r.path("status").asText());
                 if (r.path("grade").path("passed").asBoolean()) ok++;
                 for (JsonNode ch : r.path("grade").path("checks")) {
                     if (!ch.path("passed").asBoolean()) {
@@ -199,7 +223,8 @@ public final class Evals {
                 r.remove("sla");
                 r.put("seconds", Math.round((System.nanoTime() - t0) / 1e8) / 10.0).put("trace", tr.path.getFileName().toString());
                 if (o.status().equals("failed") || o.status().equals("guardrail_intervened")) {
-                    ObjectNode e = Contracts.object().put("error", o.error()).put("cost_usd", o.costUsd()).put("trace", tr.path.getFileName().toString());
+                    ObjectNode e = Contracts.object().put("error", o.error()).put("status", o.status()).put("cost_usd", o.costUsd())
+                            .put("trace", tr.path.getFileName().toString());
                     return e;
                 }
                 return r;

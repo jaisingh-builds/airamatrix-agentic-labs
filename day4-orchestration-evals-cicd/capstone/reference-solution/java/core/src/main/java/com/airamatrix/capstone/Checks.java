@@ -132,7 +132,7 @@ public final class Checks {
 
     /** The CI decision - Lab 5.2's gate: rate >= min AND no critical failure; an error on a critical case fails closed. */
     public static ObjectNode gate(JsonNode caseResults, double minPassRate) {
-        int runs = 0, passed = 0, errors = 0, retried = 0, first = 0;
+        int runs = 0, passed = 0, errors = 0, retried = 0, first = 0, accepted = 0;
         List<String> critical = new ArrayList<>();
         for (JsonNode c : caseResults) {
             for (JsonNode r : c.path("runs")) {
@@ -144,6 +144,7 @@ public final class Checks {
                     continue;
                 }
                 boolean ok = r.path("grade").path("passed").asBoolean();
+                if (r.path("grade").path("accepted_refusal").asBoolean()) accepted++;
                 if (ok) { passed++; if (!r.has("retried_after")) first++; }
                 for (JsonNode ch : r.path("grade").path("checks")) {
                     if (ch.path("critical").asBoolean() && !ch.path("passed").asBoolean()) {
@@ -156,7 +157,7 @@ public final class Checks {
         ObjectNode g = Contracts.object();
         g.put("ok", rate >= minPassRate && critical.isEmpty() && runs > 0).put("pass_rate", Math.round(rate * 1000) / 1000.0)
          .put("runs", runs).put("passed", passed).put("first_attempt_passed", first).put("retried", retried)
-         .put("unrecovered_errors", errors).put("min_pass_rate", minPassRate);
+         .put("unrecovered_errors", errors).put("accepted_refusals", accepted).put("min_pass_rate", minPassRate);
         ArrayNode cf = g.putArray("critical_failures");
         critical.forEach(cf::add);
         return g;
