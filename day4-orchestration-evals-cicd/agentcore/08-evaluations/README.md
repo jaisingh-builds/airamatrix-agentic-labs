@@ -14,6 +14,7 @@ Both read the OpenTelemetry traces from step 1 and 6. No change to the agents.
 
 ```bash
 PYTHONPATH=.. python online_eval.py
+PYTHONPATH=.. python online_eval.py --runtimes java   # the Java agents (06-agents-java): configs aira_d4j_*_eval
 ```
 
 One config **per agent** (a config watches one service), sampling 100 %, a session is "complete" after
@@ -35,6 +36,7 @@ metrics in `Bedrock-AgentCore/Evaluations`, with the judge's explanation for eve
 ```bash
 PYTHONPATH=.. python batch_eval.py            # runs golden.json through the supervisor, waits, scores
 PYTHONPATH=.. python batch_eval.py --rescore  # re-score the last run (e.g. after a LogEventMissingException)
+PYTHONPATH=.. python batch_eval.py --runtimes java   # the same golden set against the Java supervisor
 ```
 
 `golden.json` has two scenarios. Each gives:

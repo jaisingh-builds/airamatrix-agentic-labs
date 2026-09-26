@@ -6,7 +6,8 @@ PYTHONPATH=.. python teardown.py --yes   # deletes
 ```
 
 Deletes, in reverse dependency order and only what **your** `out/state.json` records: dashboard → online
-evaluations and their role → runtimes and their roles → the S3 bucket → memory → gateway targets and
+evaluations and their role → runtimes and their roles → the Java runtimes, their roles and the image
+repository (if you did 06-agents-java) → the S3 bucket → memory → gateway targets and
 gateway → policies and policy engine → API-key providers → gateway role → handbook Lambda and its role →
 OAuth providers → Cognito pool → guardrail. Each item is best-effort; anything already gone is skipped.
 

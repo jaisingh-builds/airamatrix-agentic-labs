@@ -3,6 +3,7 @@
     PYTHONPATH=.. python batch_eval.py                   # run golden.json through the supervisor, then score it
     PYTHONPATH=.. python batch_eval.py --rescore         # score the last golden run again (no agent calls)
     PYTHONPATH=.. python batch_eval.py --no-run --sessions triage-abc... triage-def...   # score any sessions
+    PYTHONPATH=.. python batch_eval.py --runtimes java   # the same golden set against the Java agents
 
 Online evaluation (8a) tells you how production is doing. This answers a different question: "is the NEW
 version at least as good as the old one on the cases we know matter?" - run it before promoting a change,
@@ -14,15 +15,17 @@ Ground truth used here (see golden.json):
 """
 import argparse, json, pathlib, time, uuid
 from datetime import datetime, timedelta, timezone
-from common import client, need, save, say, state
+from common import client, need, runtime_keys, save, say, state
 
 p = argparse.ArgumentParser()
 p.add_argument("--no-run", action="store_true", help="do not invoke the agent; score --sessions as they are")
 p.add_argument("--sessions", nargs="*", default=[])
 p.add_argument("--rescore", action="store_true", help="re-score the last golden run, e.g. after a span-lag error")
+p.add_argument("--runtimes", choices=["python", "java"], default="python", help="which step-6 agents to test")
 a = p.parse_args()
+K = runtime_keys(a.runtimes)
 
-(runtimes, online) = need("runtimes", "online_evals")
+(runtimes, online) = need(K["runtimes"], K["online_evals"])
 sup = online["supervisor"]
 golden = json.loads((pathlib.Path(__file__).parent / "golden.json").read_text())["scenarios"]
 rt = client("bedrock-agentcore", read_timeout=900, retries={"total_max_attempts": 1})
@@ -31,7 +34,7 @@ started = datetime.now(timezone.utc) - timedelta(minutes=1)
 runs = []                                   # (session_id, scenario or None)
 if a.rescore:
     by_id = {sc["id"]: sc for sc in golden}
-    runs = [(sid, by_id[scid]) for sid, scid in state().get("last_golden_runs", [])]
+    runs = [(sid, by_id[scid]) for sid, scid in state().get(K["golden"], [])]
 elif not a.no_run:
     for sc in golden:
         sid = f"golden-{sc['id']}-{uuid.uuid4().hex[:12]}".ljust(33, "0")
@@ -42,7 +45,7 @@ elif not a.no_run:
         out = json.loads(r["response"].read())
         say(f"ran      {sc['id']:<28} {time.time() - t0:4.0f}s  tools={out.get('tools_used')}")
         runs.append((sid, sc))
-    save(last_golden_runs=[[sid, sc["id"]] for sid, sc in runs])
+    save(**{K["golden"]: [[sid, sc["id"]] for sid, sc in runs]})
     # Spans reach CloudWatch in batches; scoring too early gives LogEventMissingException -> use --rescore
     say("waiting  180s for the spans to be indexed in CloudWatch")
     time.sleep(180)
@@ -85,4 +88,4 @@ for s in res.get("evaluatorSummaries", []):
         f"scored {s.get('totalEvaluated')}  failed {s.get('totalFailed')}")
 dest = r.get("outputConfig", {}).get("cloudWatchConfig", {})
 say("detail  ", dest.get("logGroupName"), "/", dest.get("logStreamName"), "(per-session scores + judge explanations)")
-save(last_batch_eval=jid)
+save(**{K["batch"]: jid})

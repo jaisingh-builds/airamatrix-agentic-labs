@@ -11,11 +11,13 @@ AgentCore publishes metrics without any code from you - this step only arranges 
 The per-request story (which tool, which policy, which span) is in GenAI Observability - linked at the top.
 """
 import json
-from common import ACCOUNT, PREFIX, REGION, client, need, save, say
+from common import ACCOUNT, PREFIX, REGION, client, need, save, say, state
 
 runtimes, gw_arn, gw_id, pe_id, g_id, g_ver, mem_arn, providers = need(
     "runtimes", "gateway_arn", "gateway_id", "policy_engine_id", "guardrail_id", "guardrail_version",
     "memory_arn", "providers")
+# the Java agents (06-agents-java), when deployed, sit next to the Python ones on the same graphs
+runtimes = {**runtimes, **{f"java {a}": arn for a, arn in state().get("java_runtimes", {}).items()}}
 NS = "AWS/Bedrock-AgentCore"
 name = f"{PREFIX}-agentcore"
 

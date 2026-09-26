@@ -35,13 +35,20 @@ def drop_role(name):
 if "dashboard" in s:
     step(f"dashboard {s['dashboard']}", lambda: client("cloudwatch").delete_dashboards(DashboardNames=[s["dashboard"]]))
 # 8 evaluations
-for agent, cfg in s.get("online_evals", {}).items():
+for agent, cfg in [*s.get("online_evals", {}).items(), *s.get("java_online_evals", {}).items()]:
     step(f"online evaluation {cfg['id']}", lambda c=cfg: ac.delete_online_evaluation_config(onlineEvaluationConfigId=c["id"]))
 step(f"role {PREFIX}-evaluation", lambda: drop_role(f"{PREFIX}-evaluation"))
 # 6 runtimes
 for agent, arn in s.get("runtimes", {}).items():
     step(f"runtime {agent}", lambda a=arn: ac.delete_agent_runtime(agentRuntimeId=a.rsplit("/", 1)[1]))
     step(f"role {PREFIX}-agent-{agent}", lambda a=agent: drop_role(f"{PREFIX}-agent-{a}"))
+# 6 (Java) runtimes, roles, image repository
+for agent, arn in s.get("java_runtimes", {}).items():
+    step(f"runtime java {agent}", lambda a=arn: ac.delete_agent_runtime(agentRuntimeId=a.rsplit("/", 1)[1]))
+    step(f"role {PREFIX}-java-agent-{agent}", lambda a=agent: drop_role(f"{PREFIX}-java-agent-{a}"))
+if "java_ecr_repo" in s:
+    step(f"ECR repository {s['java_ecr_repo']} (+ images)",
+         lambda: client("ecr").delete_repository(repositoryName=s["java_ecr_repo"], force=True))
 if "agent_bucket" in s:
     def drop_bucket():
         b = boto3.resource("s3").Bucket(s["agent_bucket"])
