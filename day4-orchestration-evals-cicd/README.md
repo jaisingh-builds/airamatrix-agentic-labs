@@ -15,6 +15,9 @@ make day4-test                                            # every offline suite 
 Node 22.6+ is needed for the MCP server (it runs `server.ts` directly). The live
 labs use your gateway key from `.env`, exactly as on Days 1–3.
 
+**On Java, or stuck on the Python/Node setup?** The same three labs exist in Java / Spring Boot,
+with the same controls and gate rules and no Agent SDK, CLI or Node: see [`java/`](java/README.md).
+
 | Lab | What | Live cost |
 |---|---|---|
 | [5.1 Multi-agent handoff](lab5-1-handoff/README.md) | Investigate → review → human gate → apply. Shared SQLite state, checkpoint/resume, idempotent write. Same flow in LangGraph. | ≈ $0.25 a run |
