@@ -21,6 +21,7 @@ labs use your gateway key from `.env`, exactly as on Days 1–3.
 | [5.2 Eval harness](lab5-2-evals/README.md) | Golden set from real tickets, outcome + trajectory graders, pass-rate gate, repeats, LLM judge calibration | ≈ $0.70 for the set |
 | [5.3 PR review stage](lab5-3-pr-review/README.md) | Headless Claude Code reviews a diff; secrets and hallucinated findings handled in code; exit code gates the merge | ≈ $0.15–0.30 a PR |
 | [Capstone](capstone/README.md) | Teams of 3–4: extend the pipeline or build one agent. Guardrail + eval + trace + human approval. | team budget |
+| [**AgentCore reference system**](agentcore/README.md) | Everything above, in production form on Amazon Bedrock AgentCore: three agents on Runtime, Gateway (MCP) + Cedar Policy, Identity per agent, Memory, Knowledge Base, Guardrail, online + batch Evaluations, one dashboard. Ten steps, each with its own README. | a few $ per stack per day (AWS) |
 
 Shared pieces in [`common/`](common): `spans.py` (JSONL tracing, redaction at
 the sink) and `trace_view.py` (print a trace as a tree).
