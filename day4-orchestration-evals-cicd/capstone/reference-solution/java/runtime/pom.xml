@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- The SAME responder (capstone-core) as an AgentCore Runtime container: arm64, port 8080, GET /ping,
+       POST /invocations. Model = Bedrock Converse with the Guardrail on every call; reads = the AgentCore
+       Gateway's read tools over MCP with an Identity token (Cedar decides which tools exist); GenAI OTel spans
+       through the ADOT Java agent. Jib builds and pushes the image - no Docker. The pattern is
+       agentcore/06-agents-java, adapted. -->
+  <parent>
+    <groupId>com.airamatrix</groupId>
+    <artifactId>capstone-reference</artifactId>
+    <version>1.0.0</version>
+  </parent>
+  <artifactId>capstone-runtime</artifactId>
+  <name>Capstone - AgentCore runtime (container)</name>
+
+  <properties>
+    <!-- set on the command line: -Dimage=<account>.dkr.ecr.<region>.amazonaws.com/<repo>:<tag> -->
+    <image>aira-capstone:local</image>
+  </properties>
+
+  <dependencies>
+    <dependency><groupId>com.airamatrix</groupId><artifactId>capstone-core</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>bedrockruntime</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>bedrockagentcore</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>apache-client</artifactId></dependency>
+    <dependency>
+      <groupId>io.modelcontextprotocol.sdk</groupId>
+      <artifactId>mcp</artifactId>
+      <version>${mcp.version}</version>
+    </dependency>
+    <!-- the OpenTelemetry API only; the ADOT Java agent in the image provides the SDK. Without it it is a no-op. -->
+    <dependency>
+      <groupId>io.opentelemetry</groupId>
+      <artifactId>opentelemetry-api</artifactId>
+      <version>${otel.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>capstone-runtime</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <environmentVariables><LAB_TRACE_DIR>${project.build.directory}/test-traces</LAB_TRACE_DIR></environmentVariables>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>otel-agent</id>
+            <phase>package</phase>
+            <goals><goal>copy</goal></goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>software.amazon.opentelemetry</groupId>
+                  <artifactId>aws-opentelemetry-agent</artifactId>
+                  <version>${adot.version}</version>
+                  <destFileName>aws-opentelemetry-agent.jar</destFileName>
+                </artifactItem>
+              </artifactItems>
+              <outputDirectory>${project.build.directory}/otel/otel</outputDirectory>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>com.google.cloud.tools</groupId>
+        <artifactId>jib-maven-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <from>
+            <image>eclipse-temurin:21-jre</image>
+            <platforms>
+              <platform><architecture>arm64</architecture><os>linux</os></platform>
+            </platforms>
+          </from>
+          <to><image>${image}</image></to>
+          <extraDirectories>
+            <paths>
+              <path><from>${project.build.directory}/otel</from><into>/</into></path>
+              <path><from>src/main/jib</from><into>/</into></path>
+            </paths>
+          </extraDirectories>
+          <container>
+            <ports><port>8080</port></ports>
+            <entrypoint>
+              <arg>/bin/sh</arg>
+              <arg>/opt/aira/start.sh</arg>
+            </entrypoint>
+            <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
+          </container>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <!-- -Pimage: build AND push the image in the package phase of this module only, so one reactor command works:
+       mvn -q -pl runtime -am package -Pimage -Dimage=... -Djib.to.auth.username=AWS -Djib.to.auth.password=... -->
+  <profiles>
+    <profile>
+      <id>image</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>com.google.cloud.tools</groupId>
+            <artifactId>jib-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>push</id>
+                <phase>package</phase>
+                <goals><goal>build</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>
