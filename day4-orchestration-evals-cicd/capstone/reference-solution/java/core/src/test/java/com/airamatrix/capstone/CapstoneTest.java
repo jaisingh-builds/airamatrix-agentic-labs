@@ -211,6 +211,16 @@ class CapstoneTest {
     }
 
     @Test
+    void anUnexpectedKeyIsNotCarriedForwardIntoACorrectResubmission() {
+        ObjectNode first = good();
+        first.put("likely_cause_confidence", "high");                     // extra key -> rejected
+        Script m = new Script(toolUse(Tools.SUBMIT, first), toolUse(Tools.SUBMIT, good()));
+        ResponderAgent.Result r = agent(m, 5.0, 6).run("s", "p", tools1001(), Guardrails.SCHEMA, tracer());
+        assertEquals(good(), r.proposal(), "the six correct keys, without the rejected extra one");
+        assertEquals(2, r.turns());
+    }
+
+    @Test
     void aReplyCutOffAtMaxTokensIsNeverValidatedOrRun() {
         ObjectNode cut = toolUse(Tools.SUBMIT, obj("summary", "a long summary that was cut off"));
         cut.put("stop_reason", "max_tokens");
