@@ -83,6 +83,7 @@ nobody made) is a data-leak incident, and a comment cannot be unsent.
 | local eval, 7 cases x 2 (final code) | **14/14 PASS**, first attempt 13/14, 1 retried, 0 unrecovered errors | $0.55 |
 | AgentCore invoke ACC-1001 | awaiting_approval, guardrail PASS, 37 s | $0.04 |
 | AgentCore eval, 7 cases x 1 (image v3) | 6/7, **gate FAIL**: the shared Bedrock Guardrail blocks one case's request as a prompt attack (LOW confidence, a false positive) — the gate fails closed, as it should | $0.19 |
+| AgentCore eval, 7 cases x 1 (image v5, injection case declares `accept_refusal`) | **7/7 PASS**, 1 accepted as a guardrail refusal (the same false positive, still reported); first attempt 4/7 — 3 invocations right after the redeploy hung to the 10-min client timeout and passed on retry | $0.20 |
 | AgentCore gate-check | agent identity: 7 tools, 0 write tools, write DENIED by Cedar | $0 |
 
 ## The 10-minute demo (local mode; commands from the repo root)

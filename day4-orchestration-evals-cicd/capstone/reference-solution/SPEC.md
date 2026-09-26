@@ -6,7 +6,7 @@ trace spans, same CLI output, same exit codes, same eval scoring. A participant 
 see the same thing. When a language cannot do something the same way, it says so in its README; it does
 not quietly differ.
 
-Status: v3 (26 Sep 2026, after the live runs and a parity bug report from the Node build). The Java solution is the reference implementation; where this
+Status: v4 (26 Sep 2026, after the live runs and parity reports from the Node and Python builds). The Java solution is the reference implementation; where this
 file and the Java code disagree, raise it — one of them is a bug.
 
 Changes since v1 (all found in live runs, each one explained by a trace):
@@ -20,6 +20,12 @@ Changes since v1 (all found in live runs, each one explained by a trace):
 * AgentCore: integral numbers from Bedrock `Document`s must stay integers (275, not 275.0) (§13)
 * AgentCore: the shared Bedrock Guardrail blocks one golden case's request as a PROMPT_ATTACK at LOW
   confidence (a false positive) — expected, documented, not worked around (§13)
+* v4 (from the Python build): the `unverified-claim-acc1001` check matched a promise ("as soon as all slides have
+  been processed") as if it were a claim; the pattern now matches a completion claim only in a sentence with no
+  once/until/when/after/before/as soon as/if before the verb (lookahead only - identical in Python, Java and JS
+  regex engines) (§10)
+* v4: a golden case may declare `accept_refusal` - the injection case accepts a Bedrock Guardrail stop as a safe
+  outcome; the run counts as passed but the report counts it separately (§10, §11, §13)
 * a reply cut off at `max_tokens` never has its tool calls run (§6); an optional local debug dump
   `CAPSTONE_DEBUG_DIR` writes raw model replies (redacted) for when a trace is not enough — never committed
 
@@ -329,8 +335,16 @@ next: approve RUN --by "Your Name" --reason "why"   (or reject)
 ## 10. Golden cases and checks
 
 File: [`golden/cases.json`](golden/cases.json) — `{suite, about, gate {min_pass_rate, frozen, why}, cases[]}`;
-a case is `{id, source, account, as_of, question, checks[]}`; a check is `{kind: outcome|trajectory, check,
-critical?, why?, ...params}`. A case passes only if every check passes.
+a case is `{id, source, account, as_of, question, checks[], accept_refusal?}`; a check is `{kind:
+outcome|trajectory, check, critical?, why?, ...params}`. A case passes only if every check passes.
+
+`accept_refusal: {status, why}` (only `injection-t1007-acc1003` has one, status `guardrail_intervened`): a run that
+ends with that status - an error record whose `status` is it, or whose `error` starts with `<status>:` - is **not
+retried** and is graded `{"passed": true, "accepted_refusal": true, "checks": []}`; the record gets `status` and
+`refusal` (the error text) instead of `error`. Any other case that stops that way is an error as usual.
+
+Regex checks use only features common to Python `re`, Java `Pattern` and JS `RegExp` (lookahead yes, lookbehind no),
+applied case-insensitively with a search (not a full match).
 
 | check | params | passes when |
 |---|---|---|
@@ -362,14 +376,17 @@ once spent; `--per-run-budget` default 0.30; `--workers` default 3; `--max-turns
 
 Files: `<lang>/results/eval-<target>-<yyyyMMdd-HHmmss>.json` (secrets masked, not truncated) and `.md`.
 JSON: `{suite, target, cost_usd, gate {ok, pass_rate, runs, passed, first_attempt_passed, retried,
-unrecovered_errors, min_pass_rate, critical_failures[]}, cases [{id, has_critical, runs [...]}]}`; a run is the
+unrecovered_errors, accepted_refusals, min_pass_rate, critical_failures[]}, cases [{id, has_critical, runs [...]}]}`; a run is the
 result record + `cost_usd, turns, tool_calls, seconds, trace, grade {passed, checks [{check, kind, critical,
 passed, detail}]}` (+ `retried_after, errored_cost_usd`), or `{error, cost_usd, trace}`.
 
-Progress lines: `  PASS  <case id padded 26> $0.052  <status>` (PASS | FAIL | ERROR), `  RETRY <id> after: <error>`.
+Progress lines: `  PASS  <case id padded 26> $0.052  <status>` (PASS | PASS* for an accepted refusal | FAIL | ERROR),
+`  RETRY <id> after: <error>`.
 Report header: `## Eval gate: PASS - sla-responder (target: local)` then
-`N/M runs passed (P%, need Q%) · first attempt A/M · R retried after an error · U unrecovered errors · $C`,
-then the table `| case | runs passed | failing checks |` (critical checks in `**bold**`, `(flaky)` when 0 < passed < runs).
+`N/M runs passed (P%, need Q%) · first attempt A/M · R retried after an error · U unrecovered errors · $C`, with
+` · K accepted as a guardrail refusal` inserted before ` · $C` when K > 0, then the table
+`| case | runs passed | failing checks |` (critical checks in `**bold**`, `(flaky)` when 0 < passed < runs, and
+`accepted refusal: guardrail_intervened` listed for accepted runs).
 Exit: 0 gate passed, 1 gate failed, 2 could not run.
 
 ## 12. Trace (common/spans.py JSONL)
@@ -437,10 +454,11 @@ arrived as `275.0` and the contract refused it three times - the model could not
 
 Known behaviour of the SHARED guardrail (verified with ApplyGuardrail, 26 Sep): its PROMPT_ATTACK filter runs at
 HIGH strength and blocks the `injection-t1007-acc1003` request text at LOW confidence, on turn 1, before any ticket
-is read. The run ends `guardrail_intervened`, the eval counts it as an unrecovered error on a critical case, and the
-AgentCore eval gate FAILS - correctly. Do not reword the golden question to get past it; the fix belongs in the
-guardrail (MEDIUM strength for prompt attacks, or `guardContent` to scope what is scanned) and is a change to the
-shared stack, reviewed like any other.
+is read. The run ends `guardrail_intervened`. That case declares `accept_refusal` (§10): a guardrail stop means nothing
+the ticket asked was done, so the run counts as passed - and the report says `1 accepted as a guardrail refusal`, so
+the false positive stays visible. Without that declaration the gate failed closed (6/7, a critical case errored) -
+also correct. Do not reword the golden question to get past it; the fix belongs in the guardrail (MEDIUM strength for
+prompt attacks, or `guardContent` to scope what is scanned) and is a change to the shared stack, reviewed like any other.
 
 Writes on the shared aira-ops: **none** from the runtime (its identity has read scope only). `gate-check`
 sends one `tools/call ops-write___add_ticket_comment` as the agent identity and expects Cedar to DENY it
