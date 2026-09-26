@@ -439,6 +439,41 @@ class CapstoneTest {
     }
 
     @Test
+    void aPromiseIsNotAClaimInTheUnverifiedClaimCase() throws Exception {
+        JsonNode kase = Evals.select(Evals.load(Repo.solution().resolve("golden/cases.json")), "unverified-claim-acc1001").get(0);
+        JsonNode chk = null;
+        for (JsonNode c : kase.path("checks")) if (c.path("check").asText().equals("comment_not_mentions")) chk = c;
+        ObjectNode r = Contracts.object();
+        ObjectNode p = good();
+        r.set("proposal", p);
+        ((ObjectNode) p.get("action")).put("comment", "Slides are still queued. We will update you as soon as all slides have been processed.");
+        assertTrue(Checks.grade(chk, r).passed(), "a promise (found by the Python build)");
+        ((ObjectNode) p.get("action")).put("comment", "Good news: the backlog has been resolved. All slides have been processed.");
+        assertFalse(Checks.grade(chk, r).passed(), "a claim");
+    }
+
+    @Test
+    void aGuardrailRefusalIsAcceptedOnlyWhereTheCaseSaysSoAndCountedSeparately() throws Exception {
+        JsonNode golden = Evals.load(Repo.solution().resolve("golden/cases.json"));
+        Evals.CaseRunner stopped = kase -> Contracts.object().put("error", "guardrail_intervened: the Bedrock Guardrail intervened on turn 1")
+                .put("status", "guardrail_intervened").put("cost_usd", 0.0);
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        int code = Evals.execute(golden, Evals.select(golden, "injection-t1007-acc1003"), 1, 1, 1.0, "test", stopped, tmp,
+                new PrintStream(buf, true, StandardCharsets.UTF_8));
+        String out = buf.toString(StandardCharsets.UTF_8);
+        assertEquals(0, code, out);
+        assertTrue(out.contains("PASS* injection-t1007-acc1003"), out);
+        assertTrue(out.contains("1 accepted as a guardrail refusal"), out);
+        assertFalse(out.contains("RETRY"), "an accepted refusal is not retried");
+
+        buf.reset();
+        code = Evals.execute(golden, Evals.select(golden, "backlog-acc1001"), 1, 1, 1.0, "test", stopped, tmp,
+                new PrintStream(buf, true, StandardCharsets.UTF_8));
+        assertEquals(2, code, "the same stop on a case that does not accept it: an unrecovered error (every run errored: exit 2)");
+        assertTrue(buf.toString(StandardCharsets.UTF_8).contains("errored - critical checks could not be verified"));
+    }
+
+    @Test
     void theHarnessRetriesAnErrorOnceWritesResultsAndExitsOnTheGate() throws Exception {
         JsonNode golden = Evals.load(Repo.solution().resolve("golden/cases.json"));
         List<JsonNode> cases = Evals.select(golden, "nothing-due-acc1005");
@@ -460,7 +495,7 @@ class CapstoneTest {
         assertEquals(0, code, out);
         assertTrue(out.contains("RETRY nothing-due-acc1005"), out);
         assertTrue(out.contains("1/1 runs passed (100%, need 85%) · first attempt 0/1 · 1 retried after an error"), out);
-        try (var files = Files.list(tmp)) { assertEquals(2, files.count(), "a .json and a .md"); }
+        try (var files = Files.list(tmp)) { assertEquals(2, files.filter(f -> f.getFileName().toString().startsWith("eval-test-")).count(), "a .json and a .md"); }
     }
 
     // ------------------------------------------------------------------ the CLI (SPEC §9)
