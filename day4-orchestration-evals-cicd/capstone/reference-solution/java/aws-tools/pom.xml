@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- deploy / invoke / approve / gate-check / eval / teardown for the capstone runtime. Plain Java + AWS SDK v2
+       (the java-tools pattern). Reads the shared stack's agentcore/out/state.json, never writes it; records what
+       it creates in capstone/reference-solution/out/capstone-state.json so teardown deletes exactly that. -->
+  <parent>
+    <groupId>com.airamatrix</groupId>
+    <artifactId>capstone-reference</artifactId>
+    <version>1.0.0</version>
+  </parent>
+  <artifactId>capstone-aws-tools</artifactId>
+  <name>Capstone - AgentCore tools</name>
+
+  <dependencies>
+    <dependency><groupId>com.airamatrix</groupId><artifactId>capstone-core</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>bedrockagentcorecontrol</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>bedrockagentcore</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>iam</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>ecr</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>sts</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>cloudwatchlogs</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>cognitoidentityprovider</artifactId></dependency>
+    <dependency><groupId>software.amazon.awssdk</groupId><artifactId>apache-client</artifactId></dependency>
+    <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-nop</artifactId></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+  </dependencies>
+
+  <build>
+    <finalName>capstone-aws</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration><mainClass>com.airamatrix.capstone.aws.CapstoneAws</mainClass></configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <environmentVariables><LAB_TRACE_DIR>${project.build.directory}/test-traces</LAB_TRACE_DIR></environmentVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
