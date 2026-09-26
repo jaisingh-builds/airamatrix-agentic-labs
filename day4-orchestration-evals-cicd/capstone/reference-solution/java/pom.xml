@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Capstone reference solution: the SLA-breach responder, one codebase, two modes.
+         core       the agent, its tools, the guardrails, the human gate, the eval harness. Local mode:
+                    training gateway (Messages API) + your own aira-ops. No AWS.
+         runtime    the same agent as an AgentCore Runtime container (Bedrock Converse + Guardrail,
+                    Gateway over MCP, Identity, OTel). Built with Jib - no Docker.
+         aws-tools  deploy / invoke / approve / gate-check / teardown for the runtime.
+       labkit and day4 common are built in the same reactor, so a clean checkout needs one command. -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.5.16</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.airamatrix</groupId>
+  <artifactId>capstone-reference</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <name>Capstone reference - SLA-breach responder</name>
+
+  <modules>
+    <module>../../../../labkit/java</module>
+    <module>../../../java/common</module>
+    <module>core</module>
+    <module>runtime</module>
+    <module>aws-tools</module>
+  </modules>
+
+  <properties>
+    <java.version>21</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <aws.sdk.version>2.55.6</aws.sdk.version>
+    <mcp.version>2.0.1</mcp.version>
+    <adot.version>2.31.0</adot.version>
+    <otel.version>1.49.0</otel.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${aws.sdk.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency><groupId>com.airamatrix</groupId><artifactId>labkit</artifactId><version>1.0.0</version></dependency>
+      <dependency><groupId>com.airamatrix</groupId><artifactId>day4-common</artifactId><version>1.0.0</version></dependency>
+      <dependency><groupId>com.airamatrix</groupId><artifactId>capstone-core</artifactId><version>1.0.0</version></dependency>
+      <dependency><groupId>org.xerial</groupId><artifactId>sqlite-jdbc</artifactId><version>3.53.4.0</version></dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>
