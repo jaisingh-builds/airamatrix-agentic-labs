@@ -6,12 +6,14 @@ trace spans, same CLI output, same exit codes, same eval scoring. A participant 
 see the same thing. When a language cannot do something the same way, it says so in its README; it does
 not quietly differ.
 
-Status: v2 (26 Sep 2026, after the live runs). The Java solution is the reference implementation; where this
+Status: v3 (26 Sep 2026, after the live runs and a parity bug report from the Node build). The Java solution is the reference implementation; where this
 file and the Java code disagree, raise it — one of them is a bug.
 
 Changes since v1 (all found in live runs, each one explained by a trace):
-* contract errors name missing AND unexpected top-level keys; 2 fix-up rounds, not 1; a fix-up is merged onto the
-  previous submission (§5, §6) — the model was omitting `exposed`/`evidence` and then resending only the missing key
+* contract errors name missing AND unexpected top-level keys; 2 fix-up rounds, not 1; a fix-up takes only the
+  MISSING required keys from the previous submission, never a disallowed one (§5, §6) — the model was omitting
+  `exposed`/`evidence` and then resending only the missing key; the Node build found that carrying every key forward
+  can trap an unexpected key (v3 of this rule, 26 Sep evening)
 * `contract.rejected` records the top-level key names the model sent (`kept`), never their content (§12)
 * refusals at the gate are traced as `gate.refused` (§12)
 * `run` / `replay` exit 3 when the guardrail blocks (§9); `tokens` prints paste-able `export` lines (§9)
@@ -149,9 +151,12 @@ Contract checks, in order:
 
 A contract error goes back to the model as
 `contract error: <message> - call submit_proposal again with the corrected keys (the keys you already sent are kept).`
-A fix-up submission is **merged onto the previous rejected submission** (top-level keys; the new value wins) and the
-merged proposal is validated in full - found live: after `missing ['evidence']` the model often resends only
-`evidence`. Merging is transport, not trust: the merged proposal still has to pass the contract and the guardrail.
+A fix-up submission takes from the previous rejected submission **only the required top-level keys it leaves
+out**; a key the schema does not allow is never carried forward. The result is validated in full. Found live: after
+`missing ['evidence']` the model often resends only `evidence` (the merge rebuilds the proposal); and in the Node
+build a merge that carried EVERYTHING forward kept an unexpected `likely_cause_confidence` alive through three correct
+resubmissions (fixed by this rule). Merging is transport, not trust: the merged proposal still has to pass the
+contract and the guardrail.
 After 3 contract errors (2 fix-up rounds) the run fails.
 
 `submit_proposal` tool description (exact): `Call exactly once with your final proposal. All six keys are required
