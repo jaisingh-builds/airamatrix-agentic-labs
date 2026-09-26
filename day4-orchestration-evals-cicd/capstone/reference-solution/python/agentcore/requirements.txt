@@ -1,0 +1,3 @@
+# For agentcore/capstone_aws.py only (deploy / invoke / approve / gate-check / eval / teardown).
+# Install it in a venv; local mode (capstone.py) needs nothing beyond the standard library.
+boto3>=1.43
