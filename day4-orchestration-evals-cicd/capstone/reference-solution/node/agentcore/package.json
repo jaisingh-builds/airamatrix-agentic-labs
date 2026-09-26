@@ -1,0 +1,22 @@
+{
+  "name": "aira-capstone-node-agentcore-tools",
+  "private": true,
+  "type": "module",
+  "description": "AgentCore mode tools (deploy, invoke, approve, gate-check, eval, teardown). Isolated from local mode, which needs no npm install.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "test": "node --test tests"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agentcore": "3.1141.0",
+    "@aws-sdk/client-bedrock-agentcore-control": "3.1141.0",
+    "@aws-sdk/client-cloudwatch-logs": "3.1141.0",
+    "@aws-sdk/client-cognito-identity-provider": "3.1141.0",
+    "@aws-sdk/client-iam": "3.1141.0",
+    "@aws-sdk/client-s3": "3.1141.0",
+    "@aws-sdk/client-sts": "3.1141.0",
+    "@smithy/node-http-handler": "4.12.1"
+  }
+}
