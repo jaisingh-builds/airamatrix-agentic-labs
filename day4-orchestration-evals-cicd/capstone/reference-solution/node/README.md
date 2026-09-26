@@ -204,7 +204,7 @@ What the traces taught us (each one is in `samples/traces/`):
 * `local-failed-stale-key.jsonl` — with a plain merge ("previous submission + new keys"), an unexpected key the
   model sent once (`likely_cause_confidence`) could never be removed: it resent six correct keys twice and was still
   refused. Fix: a fix-up takes from the previous submission **only the required keys it leaves out**
-  (`lib/agent.mjs:46`). After it: 14/14 on the first attempt.
+  (`lib/agent.mjs:46`) — found in this build, now SPEC v3 §5 for all three languages. After it: 14/14 on the first attempt.
 * AgentCore gate FAIL, two findings, neither hidden: the shared Bedrock Guardrail blocks the `injection-t1007-acc1003`
   request as a prompt attack (SPEC §13 — not reworded around), and the `unverified-claim-acc1001` check's pattern
   matched "will confirm once all slides are processed" — a grader false positive to fix in the golden file, never in the agent.
@@ -228,6 +228,4 @@ eval report format. Where Node differs, on purpose:
 * AgentCore packaging is a direct code deploy zip (no container, no ECR), written by a small zip writer so it
   works on Windows without `zip`; the runtime is `node:http` (no web framework).
 * `agentcore/cli.mjs score` (AgentCore Evaluations over the runtime's spans) has no Java counterpart yet.
-* The fix-up rule above (only missing required keys are completed from the previous submission) is stricter than
-  SPEC v2's plain merge; raised with the Java side as a SPEC bug, with the trace.
 * `package-lock.json` files are not committed (they would exceed the review size); `package.json` pins exact versions of the direct dependencies.
