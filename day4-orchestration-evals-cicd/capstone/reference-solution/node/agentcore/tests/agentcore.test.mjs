@@ -28,6 +28,19 @@ describe("AgentCore mode (offline)", { skip: !ready && "run npm install in agent
     };
   });
 
+  test("the Gateway token is bound to the workload token that obtained it", async () => {
+    const { IdentityTokens, IdentityError } = await import("../runtime/identity.mjs");
+    const seen = [];
+    const fake = { send: async (cmd) => { seen.push(cmd.input.workloadIdentityToken); return { accessToken: `gw-for-${cmd.input.workloadIdentityToken}` }; } };
+    const ids = new IdentityTokens(fake, "aira-d4-investigator", ["aira-ops/read"]);
+    assert.equal(await ids.gatewayToken("wat-a"), "gw-for-wat-a");
+    assert.equal(await ids.gatewayToken("wat-a"), "gw-for-wat-a");            // same caller: cached
+    await assert.rejects(ids.gatewayToken(undefined), IdentityError);          // no token: refused, cache or not
+    await assert.rejects(ids.gatewayToken("  "), IdentityError);
+    assert.equal(await ids.gatewayToken("wat-b"), "gw-for-wat-b");            // another caller: its own exchange
+    assert.deepEqual(seen, ["wat-a", "wat-b"]);
+  });
+
   test("Messages API <-> Converse, and the guardrail is on every call", async () => {
     const seen = [];
     const converse = async (req) => { seen.push(req); return { stopReason: "tool_use", usage: { inputTokens: 10, outputTokens: 5 },
