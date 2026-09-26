@@ -67,12 +67,16 @@ day3-test:
 	@$(MAKE) --no-print-directory lab4-test
 
 D4 := day4-orchestration-evals-cicd
-.PHONY: day4-test day4-starters
+.PHONY: day4-test day4-starters day4-java-test
 day4-test:
 	@echo "=== day4: common (spans) ===" && cd $(D4)/common && python3 -m unittest -q test_spans
 	@echo "=== day4: 5.1 handoff ===" && cd $(D4)/lab5-1-handoff && python3 -m unittest -q test_pipeline test_graph
 	@echo "=== day4: 5.2 evals ===" && cd $(D4)/lab5-2-evals && python3 -m unittest -q test_graders test_judge
 	@echo "=== day4: 5.3 pr review ===" && cd $(D4)/lab5-3-pr-review && python3 -m unittest -q test_review
+
+# Day 4, Java / Spring Boot track: offline tests of common + the three lab modules (no model, no cost).
+day4-java-test:
+	mvn -q -pl $(D4)/java/common,$(D4)/java/lab51,$(D4)/java/lab52,$(D4)/java/lab53 -am test
 
 # Your TODO progress: these FAIL until the starters are finished.
 day4-starters:

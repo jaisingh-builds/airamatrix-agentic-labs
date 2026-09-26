@@ -84,6 +84,7 @@ cd day4-orchestration-evals-cicd/agentcore
 | [04 Gateway + Policy](04-gateway-policy/) | `PYTHONPATH=.. python setup_gateway.py` | 3 min | MCP gateway, 3 targets, 4 Cedar policies, role tests |
 | [05 Memory](05-memory/) | `PYTHONPATH=.. python create_memory.py` | 3 min | memory with 2 long-term strategies |
 | [06 Agents](06-agents/) | `PYTHONPATH=.. python deploy_agents.py` | 5 min | 3 runtimes, READY |
+| [06 Agents, Java](06-agents-java/) *(alternative)* | `java -jar java-tools/target/agentcore-tools.jar deploy --image …` | 5 min | the same 3 agents as a Java container; `invoke` / `approve` in Java too |
 | [07 Run](07-run/) | `PYTHONPATH=.. python invoke.py supervisor "Triage ticket T-1001"` | 2 min | the full flow |
 | [08 Evaluations](08-evaluations/) | `PYTHONPATH=.. python online_eval.py` then `batch_eval.py` | 6 min | live scores + a regression run |
 | [09 Dashboard](09-dashboard/) | `PYTHONPATH=.. python create_dashboard.py` | 10 s | one dashboard URL |

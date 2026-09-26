@@ -13,6 +13,7 @@
     <module>labkit/java</module>
     <module>day1-foundations/lab1-bare-metal-loop/java</module>
     <module>day2-agentic-coding/brownfield/legacy-svc</module>
+    <module>day4-orchestration-evals-cicd/java</module>
   </modules>
 
   <properties>
