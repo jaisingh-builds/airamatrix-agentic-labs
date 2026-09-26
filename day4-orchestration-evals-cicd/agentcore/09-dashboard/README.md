@@ -6,7 +6,7 @@ PYTHONPATH=.. python create_dashboard.py      # prints the dashboard URL
 
 | Row | Widgets | Namespace |
 |---|---|---|
-| Runtime | invocations, p90 latency, errors — per agent | `AWS/Bedrock-AgentCore` |
+| Runtime | invocations, p90 latency, errors — per agent (the Java agents too, as `java …`, when deployed) | `AWS/Bedrock-AgentCore` |
 | Gateway + Policy | tool calls by tool · allow vs deny · denials by determining policy | `AWS/Bedrock-AgentCore` |
 | Safety + identity + cost | guardrail evaluated vs intervened · OAuth tokens issued per agent · Claude tokens in/out | `AWS/Bedrock/Guardrails`, `AWS/Bedrock-AgentCore`, `AWS/Bedrock` |
 | Quality + memory | evaluation scores 0–1 (online and batch) · memory records extracted | `Bedrock-AgentCore/Evaluations`, `AWS/Bedrock-AgentCore` |

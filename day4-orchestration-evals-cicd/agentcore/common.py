@@ -71,3 +71,13 @@ def role(name, service, policy, extra_trust=None):
     if fresh:
         time.sleep(12)          # a brand-new role takes a few seconds before services can assume it
     return arn
+
+
+def runtime_keys(which):
+    """--runtimes python|java -> the state keys a step-8 script reads and writes. The Java agents (06-agents-java)
+    are separate runtimes ({prefix}j_{role}); their evaluation configs and golden runs are kept apart."""
+    if which == "java":
+        return {"runtimes": "java_runtimes", "online_evals": "java_online_evals", "golden": "java_last_golden_runs",
+                "batch": "java_last_batch_eval", "name": PREFIX.replace("-", "_") + "j"}
+    return {"runtimes": "runtimes", "online_evals": "online_evals", "golden": "last_golden_runs",
+            "batch": "last_batch_eval", "name": PREFIX.replace("-", "_")}

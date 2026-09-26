@@ -1,6 +1,7 @@
 """Step 8a - ONLINE evaluation: score live production traffic continuously.
 
-    PYTHONPATH=.. python online_eval.py
+    PYTHONPATH=.. python online_eval.py                   # the Python agents (step 6)
+    PYTHONPATH=.. python online_eval.py --runtimes java   # the Java agents (06-agents-java)
 
 AgentCore Evaluations reads the OpenTelemetry traces the runtimes already write to CloudWatch (step 1 turned on
 Transaction Search; opentelemetry-instrument in step 6 emits them). No code change in the agents.
@@ -9,9 +10,13 @@ Transaction Search; opentelemetry-instrument in step 6 emits them). No code chan
   session timeout 5 min - a session with no new spans for 5 minutes is "complete" and gets session-level scores
 Scores land in CloudWatch: GenAI Observability -> Evaluations, and as metrics (step 9's dashboard).
 """
-from common import ACCOUNT, PREFIX, REGION, client, need, role, save, say, state
+import argparse
+from common import ACCOUNT, PREFIX, REGION, client, need, role, runtime_keys, save, say, state
 
-(runtimes,) = need("runtimes")
+p = argparse.ArgumentParser()
+p.add_argument("--runtimes", choices=["python", "java"], default="python")
+K = runtime_keys(p.parse_args().runtimes)
+(runtimes,) = need(K["runtimes"])
 ac = client("bedrock-agentcore-control")
 
 # Which runtimes to watch: their log group and OTel service name are derived from the runtime id
@@ -46,7 +51,7 @@ configs = {}
 for agent, rid in ids.items():                 # one config per agent: a config watches exactly one service
     lg = f"/aws/bedrock-agentcore/runtimes/{rid}-DEFAULT"
     svc = f"{rid.rsplit('-', 1)[0]}.DEFAULT"                                   # e.g. aira_d4_supervisor.DEFAULT
-    cname = f"{PREFIX.replace('-', '_')}_{agent}_eval"
+    cname = f"{K['name']}_{agent}_eval"                                          # aira_d4_… or aira_d4j_…
     spec = dict(rule={"samplingConfig": {"samplingPercentage": 100.0}, "sessionConfig": {"sessionTimeoutMinutes": 5}},
                 dataSourceConfig={"cloudWatchLogs": {"logGroupNames": [lg], "serviceNames": [svc]}},
                 evaluators=[{"evaluatorId": e} for e in EVALUATORS],
@@ -65,4 +70,4 @@ for agent, rid in ids.items():                 # one config per agent: a config 
     configs[agent] = {"id": cid, "arn": c["onlineEvaluationConfigArn"], "service": svc, "log_group": lg,
                       "results_log_group": out.get("logGroupName")}
 say("scoring ", ", ".join(EVALUATORS))
-save(online_evals=configs, eval_role=rarn)
+save(**{K["online_evals"]: configs}, eval_role=rarn)

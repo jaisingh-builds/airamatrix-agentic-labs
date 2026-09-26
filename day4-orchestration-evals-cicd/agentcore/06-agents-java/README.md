@@ -4,9 +4,8 @@ The same investigator / reviewer / supervisor as [`06-agents`](../06-agents/), w
 **Java 21 + Spring Boot + AWS SDK for Java v2 + the MCP Java SDK**. Same prompts, same guardrail,
 same Identity clients, same Gateway tools and Cedar decisions, same Memory, same evaluations.
 
-**Status: interim.** Built, deployed and verified end to end (triage, one approval comment, tool views,
-guardrail, approval paths, memory, batch evaluation). Not yet done: the `--runtimes java` switch for
-steps 08/09, and teardown of the Java resources in step 10 (manual commands at the end of this page).
+Built, deployed and verified end to end: triage with one approval comment, per-role tool views, guardrail,
+approval paths, memory recall, online and batch evaluation, dashboard, teardown.
 
 ## Why a container
 
@@ -117,6 +116,13 @@ java -jar $T approve --value 16 --version 1                                   # 
   tools    ask_investigator, ask_reviewer, ops-write___add_ticket_comment   stop=end_turn
 ```
 
+**6. Evaluate and watch** — steps 08 and 09 take `--runtimes java`; the dashboard picks the Java agents up:
+
+```bash
+cd 08-evaluations && PYTHONPATH=.. python online_eval.py --runtimes java && PYTHONPATH=.. python batch_eval.py --runtimes java; cd ..
+cd 09-dashboard && PYTHONPATH=.. python create_dashboard.py; cd ..
+```
+
 ## Offline tests
 
 ```bash
@@ -135,14 +141,6 @@ mvn -q -f java-tools/pom.xml test         # 11: IAM policies, runtime env, state
 | Memory recalls only "the user triaged T-1001" | the fact extractor learns from user-role content. Strands stores tool results in user messages, so the Java agent does too (marked `[tool] `, left out of replayed history) |
 | Evaluations ignore the spans | the evaluators need scope `opentelemetry.instrumentation.*`, `gen_ai.operation.name`, and `session.id` on every span — see `GenAiTelemetry` |
 
-## Clean up (until step 10 covers it)
+## Clean up
 
-```bash
-P=${AC_PREFIX:-aira-d4}; PU=${P//-/_}
-for id in $(aws bedrock-agentcore-control list-agent-runtimes --region ap-south-1 --query "agentRuntimes[?starts_with(agentRuntimeName, '${PU}j_')].agentRuntimeId" --output text); do
-  aws bedrock-agentcore-control delete-agent-runtime --region ap-south-1 --agent-runtime-id "$id"; done
-for r in investigator reviewer supervisor; do
-  aws iam delete-role-policy --role-name "$P-java-agent-$r" --policy-name least-privilege
-  aws iam delete-role --role-name "$P-java-agent-$r"; done
-aws ecr delete-repository --region ap-south-1 --repository-name "$P-agents-java" --force
-```
+Step 10's `teardown.py` deletes the Java runtimes, their roles and the image repository with everything else.
